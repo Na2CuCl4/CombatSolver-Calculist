@@ -33,8 +33,8 @@
     <RitsuLibReferenceTarget Condition="'$(RitsuLibReferenceTarget)' == ''">0.111.0</RitsuLibReferenceTarget>
     <RitsuLibReferencesProps>$(RitsuWorkshopRoot)/RitsuLib.References.props</RitsuLibReferencesProps>
     <!-- Godot.NET.Sdk 把模组产物放在 .godot/mono/temp 下；保留 bin/ 作为回退。 -->
-    <CombatSolverDll Condition="'$(CombatSolverDll)' == '' and Exists('$(RepoRoot)/.godot/mono/temp/bin/Release/CombatSolver.dll')">$(RepoRoot)/.godot/mono/temp/bin/Release/CombatSolver.dll</CombatSolverDll>
-    <CombatSolverDll Condition="'$(CombatSolverDll)' == ''">$(RepoRoot)/bin/Release/net9.0/CombatSolver.dll</CombatSolverDll>
+    <CombatSolverDll Condition="'$(CombatSolverDll)' == '' and Exists('$(RepoRoot)/.godot/mono/temp/bin/Release/CombatSolver.Calculist.dll')">$(RepoRoot)/.godot/mono/temp/bin/Release/CombatSolver.Calculist.dll</CombatSolverDll>
+    <CombatSolverDll Condition="'$(CombatSolverDll)' == ''">$(RepoRoot)/bin/Release/net9.0/CombatSolver.Calculist.dll</CombatSolverDll>
   </PropertyGroup>
 
   <Import Project="$(RitsuLibReferencesProps)" Condition="Exists('$(RitsuLibReferencesProps)')" />
@@ -51,7 +51,7 @@
     <Reference Include="0Harmony" HintPath="$(Sts2DataDir)/0Harmony.dll" Private="false" />
     <Reference Include="STS2-RitsuLib" HintPath="$(RitsuLibDir)/STS2-RitsuLib.dll" Private="false"
                Condition="!Exists('$(RitsuLibReferencesProps)')" />
-    <Reference Include="CombatSolver" HintPath="$(CombatSolverDll)" Private="false" />
+    <Reference Include="CombatSolver.Calculist" HintPath="$(CombatSolverDll)" Private="false" />
   </ItemGroup>
 
   <ItemGroup>

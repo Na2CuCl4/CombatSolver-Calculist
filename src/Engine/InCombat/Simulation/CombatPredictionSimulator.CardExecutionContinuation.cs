@@ -46,6 +46,7 @@ internal sealed partial class CombatPredictionSimulator
                 }
                 SynchronizePowerAmountPredictionStates();
                 History.CardPlayStarted(card, activePlay);
+                CustomCombatStateMirrors.CardPlayStarted?.Invoke(this, activePlay);
                 if (State.CombatState is ICombatPredictionCardExecutionSink startedSink)
                     startedSink.RecordCardPlayStarted(card, activePlay);
                 var effectSink = State.CombatState as ICombatPredictionCardExecutionSink;

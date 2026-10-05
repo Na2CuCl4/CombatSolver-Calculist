@@ -115,6 +115,7 @@ internal sealed partial class CombatPredictionSimulator
     {
         _trace = new PredictionTrace();
         State = new CombatPredictionState(combatState);
+        if (combatState is CombatSolver.SimulatedCombatState customPowerCombat) customPowerCombat.AttachCustomPowerSimulator(this);
         Rng = combatState is ICombatPredictionRunSnapshot runSnapshot
             ? runSnapshot.CreatePredictionRngSet()
             : CombatPredictionRngSet.From(combatState.RunState.Rng);
@@ -138,6 +139,7 @@ internal sealed partial class CombatPredictionSimulator
     {
         _trace = trace;
         State = state;
+        if (state.CombatState is CombatSolver.SimulatedCombatState customPowerCombat) customPowerCombat.AttachCustomPowerSimulator(this);
         Rng = rng;
         StateStore = stateStore;
         History = history;

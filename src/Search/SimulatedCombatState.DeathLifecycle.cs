@@ -197,10 +197,11 @@ internal sealed partial class SimulatedCombatState
 
     public void RemovePowersAfterDeath(Creature creature)
     {
-        bool hasIllusionHook = EffectivePowers().Any(power =>
-            power is IllusionPower
-            && power.Amount > 0
-            && ReferenceEquals(power.Owner, creature));
+        bool detachedVitalSpark = false;
+        // Hook.ShouldPowerBeRemovedOnDeath consults every active listener;
+        // Illusion's veto also preserves buffs on another creature's death.
+        bool hasIllusionHook = IterateHookListeners().Any(listener =>
+            listener is IllusionPower { Amount: > 0 });
         foreach (PowerModel power in EffectivePowers()
                      .Where(power => power.Owner == creature && power.Amount != 0)
                      .ToArray())
@@ -208,10 +209,23 @@ internal sealed partial class SimulatedCombatState
             bool keep = !power.ShouldPowerBeRemovedAfterOwnerDeath();
             if (hasIllusionHook)
             {
-                keep = power.Type != PowerType.Debuff || power is ITemporaryPower;
+                keep |= power.Type != PowerType.Debuff || power is ITemporaryPower;
             }
             if (!keep)
+            {
+                if (power is DampenPower)
+                {
+                    // CreatureCmd invokes AfterRemoved even when the owner dies.
+                    // The tracked wrappers include exhausted cards and survive Fork.
+                    RestoreDampenedCards(creature);
+                    if (_dampenCasters != null)
+                        foreach (var entry in _dampenCasters.Where(entry => entry.Target == creature).ToArray())
+                            _dampenCasters.Remove(entry);
+                }
+                if (power is VitalSparkPower && _predictionState?.IsAttachedToCombat(creature) == false)
+                    detachedVitalSpark = true;
                 SetPowerAmount(power, 0);
+            }
         }
         if (!ContainsCreature(creature))
         {
@@ -222,6 +236,11 @@ internal sealed partial class SimulatedCombatState
                 SetPowerAmount(power, 0);
             }
         }
+        // Death removal is not AfterPowerAmountChanged. Do not flatten the surviving
+        // cards' captured affliction amounts when a detached Spark source disappears.
+        if (detachedVitalSpark)
+            _lastNormalizedVitalSparkAmount = EffectivePowers().OfType<VitalSparkPower>()
+                .Where(power => power.Amount > 0).Sum(power => power.Amount);
     }
 
     private void ResolveTestSubjectRevive(CombatPredictionSimulator simulator, Creature creature)

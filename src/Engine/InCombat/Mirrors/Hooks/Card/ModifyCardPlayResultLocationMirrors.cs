@@ -14,6 +14,8 @@ using AfterRegistry = MethodMirrorRegistry<AbstractModel, AfterModifyingCardPlay
 // Mirrors Hook.ModifyCardPlayResultLocation and CardModel.OnPlayWrapper's direct selected-modifier after dispatch.
 internal static class ModifyCardPlayResultLocationMirrors
 {
+    public static void Register<T>(Func<T, ModifyCardPlayResultLocationMirrorContext, CardLocation> handler) where T : AbstractModel => Registry.Register<T>(handler);
+    public static void RegisterAfter<T>(Action<T, AfterModifyingCardPlayResultLocationMirrorContext> handler) where T : AbstractModel => AfterRegistry.Register<T>(handler);
     private static readonly MirrorMethodSpec ModifyCardPlayResultLocation = MirrorMethodSpec.Hook(
         nameof(AbstractModel.ModifyCardPlayResultLocation),
         [typeof(CardModel), typeof(bool), typeof(ResourceInfo), typeof(CardLocation)]);

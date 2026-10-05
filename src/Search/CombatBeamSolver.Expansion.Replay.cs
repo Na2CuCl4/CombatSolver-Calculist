@@ -1040,6 +1040,11 @@ internal sealed partial class CombatBeamSolver
             {
                 return SearchBoundaryReason.PendingChoice;
             }
+            // Phase-two late hooks can end combat (for example Disintegration).
+            // Finish that phase and its death compensation, then commit the
+            // terminal before a side switch resets the current-side history.
+            if (simulator.CheckWinCondition(simulatedCombat.GetPlayerTurnNumber(_player)))
+                return SearchBoundaryReason.None;
         }
 
         SimCreatureState simulatedPlayer = simulator.State.GetCreature(_player.Creature);

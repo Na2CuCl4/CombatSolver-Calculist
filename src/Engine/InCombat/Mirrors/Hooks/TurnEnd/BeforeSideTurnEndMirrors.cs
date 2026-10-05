@@ -23,6 +23,9 @@ using Registry = MethodMirrorRegistry<AbstractModel, BeforeSideTurnEndMirrorCont
 // Mirrors the prediction-relevant parts of Hook.BeforeSideTurnEnd.
 internal static class BeforeSideTurnEndMirrors
 {
+    public static void RegisterVeryEarly<T>(Action<T, BeforeSideTurnEndMirrorContext> handler) where T : AbstractModel => VeryEarlyRegistry.Register<T>(handler);
+    public static void RegisterEarly<T>(Action<T, BeforeSideTurnEndMirrorContext> handler) where T : AbstractModel => EarlyRegistry.Register<T>(handler);
+    public static void Register<T>(Action<T, BeforeSideTurnEndMirrorContext> handler) where T : AbstractModel => Registry.Register<T>(handler);
     private static readonly MirrorMethodSpec BeforeSideTurnEndVeryEarly = MirrorMethodSpec.Hook(
         nameof(AbstractModel.BeforeSideTurnEndVeryEarly),
         [typeof(PlayerChoiceContext), typeof(CombatSide), typeof(IEnumerable<Creature>)]);

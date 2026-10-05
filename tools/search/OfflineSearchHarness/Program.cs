@@ -419,7 +419,7 @@ internal sealed record HarnessOptions
           --workspace <dir>      工作区目录（默认 .local/offline-harness）
           --language <code>      本地化语言码（默认 eng）
           --verbose-game-log     把游戏 info/debug 日志也打到标准输出
-        环境变量 OFFLINE_HARNESS_COMBATSOLVER_DLL 可以换掉运行时加载的 CombatSolver.dll。
+        环境变量 OFFLINE_HARNESS_COMBATSOLVER_DLL 可以换掉运行时加载的 CombatSolver.Calculist.dll。
         """;
 
     public HarnessScenario Scenario { get; init; } = new("IRONCLAD", "FUZZY_WURM_CRAWLER_WEAK", "OFFLINEHARNESS1", 0, 0);

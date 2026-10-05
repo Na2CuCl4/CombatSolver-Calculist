@@ -53,8 +53,11 @@ CombatRootSnapshot.Capture（主线程根）
 - 历史敏感倍率使用冻结的根历史与当前分支新增事件。验证应让实机在根捕获后推进同类事件，再检查父分支、Fork 与跨回合结果，覆盖回合准备根早于实机抽牌的时间窗口。
 - 出牌限制先对照原版事件口径：CardPlayStarted 包含仍在执行的外层卡牌及重放，不能换成已完成次数或手动动作数。凡庸的权威入口是 ShouldPlay mirror，手动与自动打牌共用分支手牌/开始计数；只在候选枚举入口拦截会漏掉倾泻等嵌套自动牌。
 - 终局回合由模拟器在原版安全检查点首次锁定，Snapshot 按值保留并供标注/排序共用；不从最后动作回合推断、不统一加一，也不在已经开始的 Hook 监听器序列中逐个插入胜利中断。
+- 玩家结束阶段二与死亡补偿全部完成后，`AdvanceRound` 必须提交安全终局检查再切换 CurrentSide 或开始下一回合；`IsInProgress` 是已提交标志，不能用它代替晚期 Hook 死亡的 `CheckWinCondition`。验证需要同一录制动作实际触发阶段二死亡，并核对侧历史、continuation 和终局回合，不用普通敌方死亡替代。
 - 单场永久成本上限按逐来源累计值判断，手动出牌历史在主线程冻结，预测增量由该来源结算点拥有，Fork/重算/跨回合保持；最大生命增长不返还已花额度。策略约束在候选产出前检查，覆盖自动出牌和重放，模拟器继续按原版效果结算。新政策同步设置、缓存键、导出与恢复。
 - 命令本身的终局门仍应在对应调用点核对。例如遗物 AfterCardPlayed 计数会在末击后递增，但 PowerCmd.Apply 在 IsEnding 拒绝加属性；不能省掉命令门，也不能把属性延后到整个监听器序列结束再统一补偿。
+- 怪物攻击杀死玩家后仍可有原生方法尾部。只能由 `MonsterMoveEffects.CompletesAfterPlayerDeath` 的精确已审计类型/行动准入，再复用既有 Apply；计数、召唤、Power 移除与自杀分别核对命令门，不能在死亡早退前复制效果，或把未知行动全部放行。验证须实际走到致命攻击后状态边界。
+- 玩家 Hook 活动资格由 `SimPlayerCombatState.IsActiveForHooks` 根捕获、Fork 按值持有并进入指纹/continuation；只在完整 `AfterDeath`、Power/球/宠物清理之后失活。后续监听器枚举排除失活玩家的牌/附着物/遗物/药水/球及仍保留的 Power，敌方 Power 保持原生资格；资格过滤不能改 Power 数量，已开始的死亡钩子序列继续完成。召唤从合格监听列表派发，不从遗物库存绕过资格，也不能用 HP0 代替失活时点。目标验证须含实际启动遗物的致死与存活新怪，以及父分支/Fork/实机隔离。
 - 生产选牌部署通过 `NativeChoiceRuntime` 驱动原版页面；`ICardSelector` 只用于无 UI 测试和原版明确自动选择。部署计划/页面失配时释放求解器输入锁、暂停自动执行并保留原生选择给玩家；只有退出场景才取消原生选择，不能取消未完成原生动作后直接排队重算。恢复测试必须等待具体 GameAction.CompletionTask，队列临时空闲不足以证明重放/选牌动作结束。
 - 计划卡牌按 ID、升级和影响后续结算的逐实例语义状态匹配；附魔、重放、费用、关键词、动态变量或临时标志不同时，不能仅凭同名卡牌的序号回放。
 - 首回合准备没有既有路线，原生页面可见后再搜索。全自动后续回合消费上一轮 `EndTurn.TurnStartChoices` 并以 continuation 核对结果，不能为了展示页面重复搜索；单步执行在上一回合路线结束后交还控制，下一回合原生页面默认等待玩家，玩家在该页面请求执行或全自动时接管既有选择并继续复用，仍不得从选择中间态重搜。
@@ -67,6 +70,8 @@ CombatRootSnapshot.Capture（主线程根）
 `AfterSideTurnEndLate` 的扩展使用 `AfterSideTurnEndLateMirrors.Register<TModel>`，在根捕获前完成登记；玩家和敌方共用 Hook facade，DisintegrationPower 不得恢复到独立晚期补偿。新增其他阶段时逐一核对原版顺序、选择暂停和状态所有权，不能把晚期入口当作所有回合事件的通用回调。
 
 ## 3. 状态所有权清单
+
+Calculist 分叉的 `CustomCombatStateMirrors` / `CustomPowerMirrors` 由 Prediction 持有，具体规则由相邻 `../CalculistDesigner/simulation/` 的隔离 Native 宿主登记；产品输入来自 `../Calculist/`。修改这些边界同时核对根捕获、同一 Fork context、逐牌语义键、continuation 和严格未知语义失败；自定义状态禁止套用未包含该状态的上游执行前缀续接特化。准备脚本只能冻结并编译维护源码，不能以临时补丁形成第二权威。
 
 卡牌费用等价须核对 `CardCostStateSupport` 的能量/星能基础值、有序修改层和失效条件，不能只比较当前费用。该writer同时服务出牌指纹、选牌与续用；没有修改层时保留原键。费用规则变化须覆盖原版出牌/回合末清理、Fork隔离与续用诊断字段边界。
 

@@ -31,6 +31,11 @@ internal static partial class EndTurnPowerSupport
 
             Creature owner = power.Owner;
             bool ownerParticipates = participantSet.Contains(owner);
+            if (CustomPowerMirrors.TryEnd(simulator, power, side, participantSet.ToArray()))
+            {
+                if (simulator.HasPendingChoice) return false;
+                continue;
+            }
             switch (power)
             {
                 // 原版按监听器顺序分发 AfterSideTurnEnd，临时属性回收排在该能力自己的位置：
@@ -123,7 +128,10 @@ internal static partial class EndTurnPowerSupport
                     if (power.Amount > 1)
                         combat.SetPowerAmount(power, power.Amount - 1);
                     else
+                    {
                         combat.MarkBattlewornDummyTimedOut();
+                        combat.CreatureEscaped(owner);
+                    }
                     break;
                 case NoDrawPower when ownerParticipates:
                     simulator.StateStore.GetPowerAmount(power).Consume();

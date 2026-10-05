@@ -128,16 +128,7 @@ internal sealed partial class SimulatedCombatState
     }
 
     public void AppendPredictedTurnCardHistory(StringBuilder text, Player player)
-    {
-        AppendTurnCardHistory(
-            text,
-            GetStatusCardsDrawnThisTurn(player),
-            GetZeroCostAttackStartsThisTurn(player.Creature),
-            GetCardPlayStartsThisTurn(player.Creature),
-            GetAttackSkillStartsThisTurn(player.Creature));
-        text.Append(";FlameHp=").Append(_brightestFlameMaxHpSpent);
-        text.Append(";AttackStarts=").Append(GetAttackPlayStartsThisTurn(player.Creature));
-    }
+        => AppendContinuationSideCardHistory(text, player);
 
     private static void AppendTurnCardHistory(
         StringBuilder text,

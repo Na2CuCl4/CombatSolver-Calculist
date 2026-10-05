@@ -231,6 +231,7 @@ internal sealed class PredictionModHookSubscriberCapture
                 "PowerGiver summon powers are configured",
                 scope);
         }
+        if (CustomCombatStateMirrors.SupportsSubscriber(type)) return;
         if (PredictionModModelSupport.IsBaseLibCardModifier(subscriber)
             || KnownPreRootSubscriberTypeNames.Contains(type.FullName ?? string.Empty)
             || (!isBaseGame && mod?.manifest?.affectsGameplay is false))

@@ -213,7 +213,7 @@ internal static class StrategySessionRunner
         try
         {
             string? assembly = null, scriptHash = null, parametersHash = null, parameters = null;
-            string main = Path.Combine(project, ".godot", "mono", "temp", "bin", "Release", "CombatSolver.dll");
+            string main = Path.Combine(project, ".godot", "mono", "temp", "bin", "Release", "CombatSolver.Calculist.dll");
             row["mainAssemblyHash"] = HashFile(main);
             if (options.TryGetValue("--script", out string? script))
             {
@@ -342,7 +342,7 @@ internal static class StrategySessionRunner
             File.WriteAllText(frozenSource, text, new UTF8Encoding(false));
         string escapedMain = SecurityElement.Escape(Path.GetFullPath(main))!;
         File.WriteAllText(Path.Combine(directory, "StrategyScript.csproj"),
-            $"<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net9.0</TargetFramework><LangVersion>13.0</LangVersion><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings><EnableDynamicLoading>true</EnableDynamicLoading></PropertyGroup><ItemGroup><Reference Include=\"CombatSolver\"><HintPath>{escapedMain}</HintPath></Reference></ItemGroup></Project>");
+            $"<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net9.0</TargetFramework><LangVersion>13.0</LangVersion><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings><EnableDynamicLoading>true</EnableDynamicLoading></PropertyGroup><ItemGroup><Reference Include=\"CombatSolver.Calculist\"><HintPath>{escapedMain}</HintPath></Reference></ItemGroup></Project>");
         ProcessStartInfo start = new("dotnet")
         {
             WorkingDirectory = directory, UseShellExecute = false, CreateNoWindow = true,

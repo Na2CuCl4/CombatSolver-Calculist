@@ -184,7 +184,7 @@ internal sealed class CombatPredictionState
                 boundary.AssertCanCapturePlayer(player);
             var liveState = player.PlayerCombatState
                 ?? throw new InvalidOperationException($"Player {player.Creature.Name} has no combat state to simulate.");
-            state = new SimPlayerCombatState(liveState);
+            state = new SimPlayerCombatState(liveState, player.IsActiveForHooks);
             _playerCombatStates.Add(player, state);
         }
 

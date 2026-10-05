@@ -633,7 +633,10 @@ internal static class CorePowerSupport
             if (simulator.HasPendingChoice)
                 return false;
             if (steamEruptionTriggered)
+            {
+                combat.RemovePowersAfterDeath(enemy);
                 continue;
+            }
             (newlyDead ??= []).Add(enemy);
         }
         if (newlyDead != null)

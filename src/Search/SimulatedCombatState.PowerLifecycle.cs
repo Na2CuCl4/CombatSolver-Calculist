@@ -132,6 +132,9 @@ internal sealed partial class SimulatedCombatState
         NormalizeSwordSageReplays(simulator);
     }
 
+    bool ICombatPredictionEffectSink.ContainsPowerSource(PowerModel source)
+        => EffectivePowers().Any(power => ReferenceEquals(power, source));
+
     private void CapturePowerAfflictionRootCards(CombatPredictionSimulator simulator)
     {
         if (_liveCardsAtSnapshot != null)
@@ -180,6 +183,13 @@ internal sealed partial class SimulatedCombatState
                 vitalSparkAmount = checked(vitalSparkAmount + vitalSpark.Amount);
         }
         bool hasVitalSpark = vitalSparkAmount > 0;
+        // A killed monster is detached before AfterRemoved. Vital Spark then returns
+        // immediately because oldOwner.CombatState is null, preserving Tainted.
+        // Only removal of a still-attached source clears the affliction.
+        bool removedAttachedVitalSpark = !hasVitalSpark && _powers?.Any(entry =>
+            entry.Key.Type == typeof(VitalSparkPower)
+            && entry.Value.Amount == 0
+            && simulator.State.IsAttachedToCombat(entry.Key.Owner)) == true;
         // 生命火花只在自己的数量变化时才回写卡上的污染层数（AfterPowerAmountChanged），平时
         // 不碰。别把「污染层数恒等于当前火花层数」当成不变量——原版自己就不满足，见下面
         // NormalizeTaintedAmount 的注释。第一次归一化只记基线，不回写：那时候的层数是从实机
@@ -204,11 +214,10 @@ internal sealed partial class SimulatedCombatState
                     && !liveCardsAtSnapshot.Contains(card.Original);
                 if (card.Preview.Affliction is Tainted tainted)
                 {
-                    // VitalSparkPower.AfterRemoved 会清掉所有污染。
-                    if (!hasVitalSpark)
+                    if (removedAttachedVitalSpark)
                         card.ClearAffliction();
                     // AfterPowerAmountChanged 会把所有污染拍平成新的数量，包括叠高了的那些。
-                    else if (vitalSparkAmountChanged && tainted.Amount != vitalSparkAmount)
+                    else if (hasVitalSpark && vitalSparkAmountChanged && tainted.Amount != vitalSparkAmount)
                         card.MutablePreview.Affliction!.Amount = vitalSparkAmount;
                     continue;
                 }

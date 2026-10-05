@@ -442,6 +442,7 @@ internal static partial class HookMirrors
         [NotNullWhen(false)] out AbstractModel? preventer,
         AutoPlayType autoPlayType)
     {
+        if (CustomCombatStateMirrors.ShouldPlay?.Invoke(simulator, card.Original) == false) { preventer = card.Original; return false; }
         var context = new ShouldPlayMirrorContext
         {
             Simulator = simulator,
@@ -745,6 +746,7 @@ internal static partial class HookMirrors
         // either AfterCardPlayed pass. The pairing belongs to this completed CardPlay transaction.
         BeforeCardPlayedMirrors.CompleteOrAbort(simulator, cardPlay);
         AfterCardPlayedMirrors.CompleteOrAbort(simulator, cardPlay, completed: true);
+        CustomCombatStateMirrors.AfterCardResolved?.Invoke(simulator, cardPlay);
     }
 
     // Mirrors Hook.AfterCurrentHpChanged.

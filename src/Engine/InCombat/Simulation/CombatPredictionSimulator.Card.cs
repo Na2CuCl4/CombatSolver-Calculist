@@ -104,6 +104,7 @@ internal sealed partial class CombatPredictionSimulator
         AddToPile(card, PileType.Exhaust);
         if (State.CombatState is ICombatPredictionCardEventSink eventSink)
             eventSink.RecordCardExhausted(card.Preview.Owner.Creature);
+        CustomCombatStateMirrors.CardExhausted?.Invoke(this, card);
         HookMirrors.AfterCardExhausted(this, card, causedByEthereal);
     }
 
@@ -312,7 +313,8 @@ internal sealed partial class CombatPredictionSimulator
             return;
         }
 
-        var playCount = card.GeneratePlayCount(this, target);
+        CustomCombatStateMirrors.SetPlayMode?.Invoke(this, card.Original, isAutoPlay);
+        var playCount = CustomCombatStateMirrors.IsRecurrence?.Invoke(this, card.Original) == true ? 1 : card.GeneratePlayCount(this, target);
         var ownerCreature = State.GetCreature(originalOwner.Creature);
         if (ownerCreature.IsDead)
         {

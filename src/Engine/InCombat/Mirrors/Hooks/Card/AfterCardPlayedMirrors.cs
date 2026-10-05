@@ -25,6 +25,8 @@ using Registry = MethodMirrorRegistry<AbstractModel, AfterCardPlayedMirrorContex
 // Mirrors the prediction-relevant parts of Hook.AfterCardPlayed and its late phase.
 internal static class AfterCardPlayedMirrors
 {
+    public static void Register<T>(Action<T, AfterCardPlayedMirrorContext> handler) where T : AbstractModel => Registry.Register<T>(handler);
+    public static void RegisterLate<T>(Action<T, AfterCardPlayedMirrorContext> handler) where T : AbstractModel => LateRegistry.Register<T>(handler);
     private static readonly MirrorMethodSpec AfterCardPlayed = MirrorMethodSpec.Hook(
         nameof(AbstractModel.AfterCardPlayed),
         [typeof(PlayerChoiceContext), typeof(CardPlay)]);

@@ -107,6 +107,9 @@ internal sealed record BranchMonsterStaticSnapshot(
 
 internal static class BranchMonsterAi
 {
+    // The native default move is the preparation sentinel, not a strategy ID.
+    public static readonly string UnpreparedMoveId = new MoveState().Id;
+
     private static readonly FieldInfo InitialStateField = typeof(MonsterMoveStateMachine)
         .GetField("_initialState", BindingFlags.Instance | BindingFlags.NonPublic)
         ?? throw new MissingFieldException(typeof(MonsterMoveStateMachine).FullName, "_initialState");
@@ -217,7 +220,10 @@ internal static class BranchMonsterAi
             switch (nextState)
             {
                 case MoveState move:
-                    log.Add(move.Id);
+                    // Native construction already logs a deterministic initial
+                    // move. Its first RollMove selects it without a second log.
+                    if (log.Count == 0 || log[^1] != move.Id)
+                        log.Add(move.Id);
                     return source with
                     {
                         Current = move,

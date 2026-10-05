@@ -79,7 +79,12 @@ internal static class MonsterMoveSemantics
 
         if (simulator.HasPendingChoice)
             return simulatedPlayer.IsDead;
-        if (playerDied)
+        // The native move task still finishes its audited post-attack tail
+        // after lethal damage. Reuse the ordinary effect implementation;
+        // command-specific ending gates decide which effects still run.
+        if (playerDied && !MonsterMoveEffects.CompletesAfterPlayerDeath(
+                move.Owner.Monster ?? throw new InvalidOperationException("预测行动的所有者不是怪物。"),
+                move.Move.Id))
             return true;
         if (fullyBlockedAttack && combat.GetAmount<ImbalancedPower>(move.Owner) > 0)
         {

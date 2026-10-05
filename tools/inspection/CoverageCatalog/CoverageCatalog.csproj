@@ -17,7 +17,7 @@
     <RitsuWorkshopRoot Condition="'$(RitsuWorkshopRoot)' == ''">$(SteamRoot)/steamapps/workshop/content/2868840/3747602295</RitsuWorkshopRoot>
     <RitsuLibReferenceTarget Condition="'$(RitsuLibReferenceTarget)' == ''">0.111.0</RitsuLibReferenceTarget>
     <RitsuLibReferencesProps>$(RitsuWorkshopRoot)/RitsuLib.References.props</RitsuLibReferencesProps>
-    <CombatSolverAssembly Condition="'$(CombatSolverAssembly)' == ''">$(CombatSolverRepositoryRoot).godot/mono/temp/bin/Release/CombatSolver.dll</CombatSolverAssembly>
+    <CombatSolverAssembly Condition="'$(CombatSolverAssembly)' == ''">$(CombatSolverRepositoryRoot).godot/mono/temp/bin/Release/CombatSolver.Calculist.dll</CombatSolverAssembly>
   </PropertyGroup>
 
   <Import Project="$(RitsuLibReferencesProps)" Condition="Exists('$(RitsuLibReferencesProps)')" />
@@ -27,7 +27,7 @@
     <Reference Include="GodotSharp" HintPath="$(Sts2DataDir)/GodotSharp.dll" Private="true" />
     <Reference Include="0Harmony" HintPath="$(Sts2DataDir)/0Harmony.dll" Private="true" />
     <Reference Include="STS2-RitsuLib" HintPath="$(RitsuLibDir)/STS2-RitsuLib.dll" Private="true" Condition="!Exists('$(RitsuLibReferencesProps)')" />
-    <Reference Include="CombatSolver" HintPath="$(CombatSolverAssembly)" Private="true" />
+    <Reference Include="CombatSolver.Calculist" HintPath="$(CombatSolverAssembly)" Private="true" />
   </ItemGroup>
   <ItemGroup Condition="Exists('$(RitsuLibReferencesProps)')">
     <Reference Update="STS2-RitsuLib;STS2-RitsuLib.Runtime;STS2-RitsuLib.Shared;STS2-RitsuLib.Ui;STS2-RitsuLib.Settings" Private="true" />

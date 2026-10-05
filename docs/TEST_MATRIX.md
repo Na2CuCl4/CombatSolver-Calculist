@@ -8,6 +8,30 @@
 
 ## 0.49.1 内存提交回归（2026-10-04）
 
+Calculist 分叉的当前准备入口为相邻 `../CalculistDesigner/simulation/scripts/run_simulation.py prepare`：冻结当前 fork HEAD + dirty source、构建 `CombatSolver.Calculist.dll`，随后通过 Designer 持有的隔离 Native 宿主与 Calculist 适配源码执行严格镜像和表达式夹具。产品输入来自相邻 Calculist；新批次默认写入 Designer 的 `artifacts/simulation/`。`CopyModOnBuild=false` / `SkipMemoryCleanerOnBuild=true`；该入口不部署或启动玩家客户端。当前语义验证结果以各批次的 manifest、fixture 输出和源码哈希为准，不能沿用上游历史通过记录。
+
+下文 2026-10-04 各批次的 `artifacts/` 路径均指迁移前相邻 `Calculist/artifacts/` 的历史本地证据，保留原位置与冻结路径；它们被 Git 忽略，不随源码提交。新检出可从 Designer 的当前入口、兼容的已安装游戏/Mod 和新的输出目录重建，不要求旧批次存在；复核某次历史结论则需要保留该次冻结证据。仓库拆分不会把这些历史结果记为本次重跑通过。
+
+新增状态域的本轮证据位于相邻 Calculist 的 `artifacts/simulation/content-validation-20261004/`：第 10 批数量缓存 8 项合约及两场原 Flutter 致命回归通过；第 11 批永久牌组 2 条 steal/escape/death-reward/claim 完整链及两场原 Flutter 条件回归通过。覆盖具体实例/有序牌组、父子/兄弟 Fork、指纹与 continuation、监听成员过滤、dirty 正负对照。第 11 批最终标准矩阵 356/356 严格有效，178 升级配对、8359 完整原生差分通过；4 项布局单列，夹具不计自然样本。各批次保留其原源码/DLL 哈希及失败原件，完整交付范围以 Calculist 总报告为准。
+
+本轮 L0 已通过 `REFACTOR_BOUNDARIES_OK search_files=247`、`TOOLS_OK files=290 projects=37`；文档检查仅有既存社区 Q008/Q009/Q010 草稿的 3 条缺失 ZIP 链接，保持原状。构建过程的 `ValidateCalculistForkSources` 要求 Entry、BeamSolver 与两份扩展确实参与 Compile，并记录实际编译项、解析引用及导入项目哈希。第一次输出目录包含源码导致 SDK 排除源码的空壳构建已修复；第二次构建日志显示 `CALCULIST_FORK_COMPILE_ITEMS 804` 并成功编译 Native，随后旧 DLL 键导致适配 preflight 失败，现已同步维护入口；这两批失败不计为语义通过。原版检出在构建前由 assembly 名称门禁拒绝，不创建产物。
+
+最终迁移烟测由 Calculist 隔离宿主在 `artifacts/simulation/content-validation-20261004/batch-03` 执行：完整 fork Release 编译，804 个 Compile 项、978 个实际编译输入哈希，Native 编译成功。`migration-adapter-03/verification.json` 的 `vanilla-strike` 与 `putpen-base` 两项 Passed，逐动作核对 continuation、资源、有序牌堆、Power/遗物/药水、牌组、表达式、阵容与九条 RNG，并通过父/兄弟 Fork 隔离；仅证明所选单效果夹具，不声称自然完整牌池或爬塔通过。源码树 SHA-256 为 `2c8fc08a577ec4e60a3b89c8c797db68010c86afe6ce36c56ee27340ff1c3391`，DLL 为 `939a61c9e4f2e8b2de9d0c6744e8e6f578dbf38f8e274c0f7d35c446f9cdb16e`；HEAD 仍是固定基线，迁移源码在 dirty/source 哈希中记录。
+
+CoverageCatalog、OfflineSearchHarness、CheckpointTool 三个受影响工具 Release 编译成功，均 0 warning / 0 error；前两者引用 batch-02 的完整 fork DLL 验证更名后的 API/程序集消费，不替代上述 batch-03 语义烟测。
+
+`BattlewornDummy` 超时修复在 Calculist `content-validation-20261004/batch-04` 的 `dummy-target-04/report.json` 与 `matrix-summary.json` 验证：V2/V3 各一项 A0、未升级固定牌组，合计 2 个 `event_defeat`；每项 4 次严格比较全部相等，GatePassed/AllComparisonsStrict 均 true。终局 live/predicted 都没有 E0 与 TIME_LIMIT_POWER，Victory=false，原生遭遇 `RanOutOfTime=true`。仅证明两个代表，不声称 A10/升级全矩阵或多敌逃跑；batch-03 的失败原样保留。
+
+宿主回合末状态牌移动修复在同一 batch-04 的 `status-turnend-04/matrix-summary.json` 验证：AeonglassBoss、DenseVegetationEventEncounter、MechaKnightElite × A0/A10 × 基础/升级牌组，12/12 真实终局（11 dead、1 win），error/unsupported/truncated 均 0，全部严格比较通过且每项预算核对 true。覆盖枯萎、感染和灼伤三个效果族；比较仍保持完整 continuation 与有序牌堆，未改为排序或集合相等。固定 seed 17、1000ms、单并发、原始 6 张牌组与资源。batch-04 fork 源码树 SHA-256 为 `f198db5ee76255804696f0daad63ea8b5ffe64ed5ba224b32f1fe46139ad0ce9`，DLL 为 `a4380da87ecf95e4cc40299b67e160e3c617a5a5e73d9dfc8f071940dde4203b`；宿主源码与输入哈希由该批次单独冻结。这是固定遭遇回归，不能当作自然爬塔胜率或未执行形态的证据。
+
+致命行动尾部的实验体代表在 `batch-05` / `subject-target-05` 验证：标准 TestSubjectBoss、A0/升级牌组、seed 17、1000ms，1 个真实 dead 终局，GatePassed/AllComparisonsStrict=true。第 6 回合原生 MULTI_CLAW_MOVE 从玩家 HP2、格挡10打至 HP0；终局完整 continuation 相等，MS0 双方 `1,2/0`，对应多段次数在致命攻击后递增。该代表已走到目标尾部，无须重复高生命失败场景；不声称第三形态或其他四个已审计尾部在此场得到覆盖。单一精确准入、原有 Apply 唯一权威的结构门禁通过；其他尾部由其独立夹具与矩阵分别证明。
+
+Owl 的致命 VERDICT 使用原 batch-03 录制牌序在 `owl-lethal-replay-06/verification.json` 验证：第 8 回合攻击前实际存在 Soar，攻击后玩家 HP0、Owl 存活 65/247；45 次严格比较、零差异、GatePassed=true，终局双方既无 Soar 也无对死亡玩家新施加的 Vulnerable。`owl-lethal-replay-05` 的 Vulnerable 失败与普通 `owl-target-05` 在 PECK 死亡的有限通过分别保留；普通死亡不能替代 VERDICT 尾部证明。
+
+`knowledge-choice-06` 的 KnowledgeDemonBoss A10/升级牌组第 10 回合在玩家阶段二死亡，完整差分因 Y/AttackStarts/WindowSide 失败；该失败保留为晚期阶段终局边界基线。维护源码在完整 phase-two + death-compensation 后补安全终局检查；`knowledge-phase2-replay-07/verification.json` 使用原 10 回合 RecordedPlans 逐动作原生重演与修复后的生产预测，全部计划 Mode=recorded-combat-replay、Nodes=0，46 次严格比较零差异，GatePassed=true。第 10 回合实际 HP5、Disintegration8 在结束阶段二死亡，不进入 Enemy；双方终局 turn=10、Y=`0/0/2/2`、AttackStarts=2、WindowSide=1，Outcome=dead、Victory=false。这是同一阶段死亡的精确回放，不由重新搜索或普通敌方攻击死亡替代；provenance 单独记录新批次与原输入/输出、DLL 哈希。
+
+SoulNexus 的隔离宿主表现查询修复在 `soulnexus-kill-replay-07/verification.json` 验证：按原 matrix-06 牌序重演，第 7 回合 Verify 从 54/234 击杀目标，玩家 HP7、原生阵容清空，42 次完整严格比较零差异，win/Victory=true、进程退出0。精准 null-room 查找替换保留原 AfterDeath 的 Died 取消订阅与玩法死亡链；没有另行声称事件处理器数量已被探针核对。旧表现查询 NRE 保留，不将其误记为求解器或产品数值错误。
+
 `CombatSolver.GcPolicyChecks` 直接编译生产 Runtime 内存代码。`default-commit` 在未改生产代码时 Failed：显式回退后分配上限仍有效；修复后 2 项 Passed，覆盖普通检查点保留限额、不可分割提交完成回收后续行、后续请求重新建立限额与取消保持原准入。
 
 ```bash

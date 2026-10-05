@@ -15,6 +15,7 @@ using Registry = MethodMirrorRegistry<CardModel, CardIsPlayableMirrorContext, bo
 // Mirrors CardModel.IsPlayable while replacing vanilla overrides that read live combat state.
 internal static class CardIsPlayableMirrors
 {
+    public static void Register<T>(Func<T, CardIsPlayableMirrorContext, bool> handler) where T : CardModel => Registry.Register<T>(handler);
     private static readonly MethodInfo IsPlayableGetterMethod =
         AccessTools.PropertyGetter(typeof(CardModel), "IsPlayable")
         ?? throw new UnreachableException("Could not find CardModel.IsPlayable getter.");

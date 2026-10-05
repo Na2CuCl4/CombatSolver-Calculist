@@ -8,6 +8,13 @@ internal sealed class PowerAmountPredictionState(int amount) : IPredictionStateF
 {
     public int Amount { get; set; } = amount;
 
+    // Queries such as damage modifiers also create this cache. A captured
+    // read is not a pending Power command, even if later lifecycle cleanup
+    // changes the authoritative branch model.
+    public int InitialAmount { get; } = amount;
+
+    public bool HasChanges => Amount != InitialAmount;
+
     public bool IsActive => Amount > 0;
 
     public void Decrement()

@@ -15,6 +15,8 @@ using AfterRegistry = MethodMirrorRegistry<AbstractModel, AfterModifyingCardPlay
 // Mirrors Hook.ModifyCardPlayCount and the selected-modifier AfterModifyingCardPlayCount dispatch.
 internal static class ModifyCardPlayCountMirrors
 {
+    public static void Register<T>(Func<T, ModifyCardPlayCountMirrorContext, int> handler) where T : AbstractModel => Registry.Register<T>(handler);
+    public static void RegisterAfter<T>(Action<T, AfterModifyingCardPlayCountMirrorContext> handler) where T : AbstractModel => AfterRegistry.Register<T>(handler);
     private static readonly MirrorMethodSpec ModifyCardPlayCount = MirrorMethodSpec.Hook(
         nameof(AbstractModel.ModifyCardPlayCount),
         [typeof(CardModel), typeof(Creature), typeof(int)]);

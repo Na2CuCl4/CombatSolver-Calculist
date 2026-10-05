@@ -24,6 +24,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <EnableDynamicLoading>true</EnableDynamicLoading>
     <RootNamespace>CombatSolver</RootNamespace>
+    <AssemblyName>CombatSolver.Calculist</AssemblyName>
     <Version>0.49.1</Version>
     <DefineConstants Condition="'$(VerifyHistoryCounters)' == 'true'">$(DefineConstants);VERIFY_HISTORY_COUNTERS</DefineConstants>
     <SteamRoot Condition="'$(SteamRoot)' == '' and '$(OS)' == 'Windows_NT' and Exists('D:/Steam')">D:/Steam</SteamRoot>
@@ -37,7 +38,7 @@
     <RitsuLibReferenceTarget Condition="'$(RitsuLibReferenceTarget)' == ''">0.111.0</RitsuLibReferenceTarget>
     <RitsuLibReferencesProps>$(RitsuWorkshopRoot)/RitsuLib.References.props</RitsuLibReferencesProps>
     <ModOutputDir>$(Sts2Dir)/mods/CombatSolver</ModOutputDir>
-    <CopyModOnBuild Condition="'$(CopyModOnBuild)' == ''">true</CopyModOnBuild>
+    <CopyModOnBuild Condition="'$(CopyModOnBuild)' == ''">false</CopyModOnBuild>
     <NoWarn>$(NoWarn);CS0436</NoWarn>
     <MemoryCleanerProject>$(MSBuildProjectDirectory)/tools/runtime/CombatSolver.MemoryCleaner/CombatSolver.MemoryCleaner.csproj</MemoryCleanerProject>
     <MemoryCleanerOutput>$(MSBuildProjectDirectory)/.local/tool-build/CombatSolver.MemoryCleaner/bin/$(Configuration)/net48/CombatSolver.MemoryCleaner.exe</MemoryCleanerOutput>
@@ -54,6 +55,7 @@
     <Publicize Include="sts2" IncludeVirtualMembers="false" IncludeCompilerGeneratedMembers="false" />
     <!-- 离线搜索宿主（tools/search/OfflineSearchHarness）走 internal 入口，不对模组自己做公开化。 -->
     <InternalsVisibleTo Include="OfflineSearchHarness" />
+    <InternalsVisibleTo Include="Native" />
   </ItemGroup>
 
   <ItemGroup>
@@ -63,6 +65,22 @@
     <Reference Include="STS2-RitsuLib" HintPath="$(RitsuLibDir)/STS2-RitsuLib.dll" Private="false"
                Condition="!Exists('$(RitsuLibReferencesProps)')" />
   </ItemGroup>
+
+  <Target Name="ValidateCalculistForkSources" BeforeTargets="CoreCompile">
+    <ItemGroup>
+      <_CalculistRequiredCompile Include="src/Runtime/Entry.cs;src/Search/CombatBeamSolver.cs;src/Prediction/CustomCombatStateMirrors.cs;src/Prediction/CustomPowerExtensions.cs" />
+      <_CalculistRequiredCompile Remove="@(Compile)" MatchOnMetadata="FullPath" MatchOnMetadataOptions="PathLike" />
+    </ItemGroup>
+    <Error Condition="'@(_CalculistRequiredCompile)' != ''" Text="Calculist fork sources missing from Compile: @(_CalculistRequiredCompile). OutputPath must not contain the project source tree." />
+    <Message Importance="High" Text="CALCULIST_FORK_COMPILE_ITEMS @(Compile->Count())" />
+    <ItemGroup>
+      <_CalculistBuildInputs Include="@(Compile);@(ReferencePath);$(MSBuildAllProjects)" />
+    </ItemGroup>
+    <GetFileHash Files="@(_CalculistBuildInputs)" Algorithm="SHA256">
+      <Output TaskParameter="Items" ItemName="_CalculistBuildInputHashes" />
+    </GetFileHash>
+    <WriteLinesToFile File="$(OutputPath)calculist-build-inputs.sha256" Lines="@(_CalculistBuildInputHashes->'%(FileHash) %(FullPath)')" Overwrite="true" Encoding="UTF-8" />
+  </Target>
 
   <Target Name="ValidateSts2GameInstall" BeforeTargets="ResolveAssemblyReferences">
     <Error Condition="!Exists('$(Sts2DataDir)/sts2.dll')" Text="找不到 $(Sts2DataDir)/sts2.dll。请检查 SteamRoot 或 local.props。" />
@@ -78,7 +96,7 @@
     <Error Condition="'$(ShowcaseCertificateSha256)' == ''" Text="发布构建缺少 ShowcaseCertificateSha256。" />
   </Target>
 
-  <Target Name="BuildMemoryCleaner" BeforeTargets="Build" Condition="'$(OS)' == 'Windows_NT'">
+  <Target Name="BuildMemoryCleaner" BeforeTargets="Build" Condition="'$(OS)' == 'Windows_NT' and '$(SkipMemoryCleanerOnBuild)' != 'true'">
     <MSBuild Projects="$(MemoryCleanerProject)" Targets="Restore" Properties="Configuration=$(Configuration)" />
     <MSBuild Projects="$(MemoryCleanerProject)" Targets="Build" Properties="Configuration=$(Configuration)" />
   </Target>

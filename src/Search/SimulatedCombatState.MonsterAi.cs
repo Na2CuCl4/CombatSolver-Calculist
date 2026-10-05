@@ -152,10 +152,10 @@ internal sealed partial class SimulatedCombatState
         MonsterMoveStateMachine machine = monster.MoveStateMachine
             ?? throw new InvalidOperationException($"怪物 {monster.Id.Entry} 没有行动状态机。");
         List<string> log = machine.StateLog.Select(state => state.Id).ToList();
-        MoveState? rolledInitial = machine.StateLog.LastOrDefault() as MoveState;
-        MoveState initial = rolledInitial
-            ?? machine.States.Values.OfType<MoveState>().FirstOrDefault()
-            ?? throw new InvalidOperationException($"怪物 {monster.Id.Entry} 没有可用行动状态。");
+        // Constructing a deterministic machine logs its initial move even
+        // though Monster.NextMove remains UNSET until native preparation.
+        // This newly created monster is owned by the current branch.
+        MoveState initial = monster.NextMove;
         (_monsterAiStates ??= [])[creature] = new BranchMonsterAiState(
             monster,
             machine,
@@ -163,7 +163,7 @@ internal sealed partial class SimulatedCombatState
             log,
             0,
             BranchMonsterStaticSnapshot.Capture(monster),
-            NeedsInitialRoll: rolledInitial == null);
+            NeedsInitialRoll: initial.Id == BranchMonsterAi.UnpreparedMoveId);
     }
 
     private BranchMonsterAiState GetMonsterAiState(Creature creature)

@@ -14,6 +14,7 @@ using Registry = MethodMirrorRegistry<PotionModel, PotionOnUseMirrorContext>;
 /// <summary>Owns exact-runtime-type dispatch for mirrored <see cref="PotionModel.OnUse"/> behavior.</summary>
 internal static class PotionOnUseMirrors
 {
+    public static void Register<T>(Action<T, PotionOnUseMirrorContext> handler) where T : PotionModel => Registry.Register<T>(handler);
     private static readonly MirrorMethodSpec OnUse = new(
         typeof(PotionModel),
         "OnUse",

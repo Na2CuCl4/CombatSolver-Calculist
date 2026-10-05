@@ -13,6 +13,16 @@ namespace CombatSolver;
 
 internal static partial class MonsterMoveEffects
 {
+    // These native move methods finish a state-changing tail after their attack kills
+    // the player. Keep the effect in Apply; this only admits the audited tail.
+    public static bool CompletesAfterPlayerDeath(MonsterModel monster, string moveId)
+        => (monster, moveId) is
+            (Fabricator, "FABRICATING_STRIKE_MOVE") or
+            (TestSubject, "MULTI_CLAW_MOVE") or
+            (OwlMagistrate, "VERDICT") or
+            (WaterfallGiant, "EXPLODE_MOVE") or
+            (GasBomb, "EXPLODE_MOVE");
+
     public static bool RemovesOwner(MonsterModel monster, string moveId)
         => (monster.GetType().Name, moveId) is
             ("GasBomb", "EXPLODE_MOVE") or
@@ -220,6 +230,8 @@ internal static partial class MonsterMoveEffects
         PredictedCard stolen = simulator.Rng.CombatCardGeneration.NextItem(candidates)
             ?? throw new InvalidOperationException("飞贼的偷牌候选非空但没有选中牌。");
         simulator.RemoveFromCombat(stolen);
+        combat.RemovePermanentDeckCard(targetPlayer, stolen.Preview.DeckVersion
+            ?? throw new InvalidOperationException("The stolen permanent card lost its DeckVersion identity."));
         combat.RecordStolenCard(simulator);
         SwipePower swipe = combat.AddPowerInstance<SwipePower>(move.Owner, 1, move.Owner);
         swipe._target = player;
@@ -348,7 +360,7 @@ internal static partial class MonsterMoveEffects
             case ("TestSubject", "RESPAWN_MOVE"):
                 return true;
             case ("TestSubject", "SKULL_BASH_MOVE"):
-                Debuff<VulnerablePower>(combat, player, 1, move.Owner);
+                Debuff<VulnerablePower>(simulator, combat, player, 1, move.Owner);
                 return true;
             case ("TestSubject", "MULTI_CLAW_MOVE"):
                 combat.SetMonsterInt(
@@ -371,22 +383,22 @@ internal static partial class MonsterMoveEffects
                     move.Owner);
                 return true;
             case ("SludgeSpinner", "OIL_SPRAY_MOVE"):
-                Debuff<WeakPower>(combat, player, 1, move.Owner);
+                Debuff<WeakPower>(simulator, combat, player, 1, move.Owner);
                 return true;
             case ("SludgeSpinner", "RAGE_MOVE"):
                 combat.Apply<StrengthPower>(move.Owner, 3, move.Owner);
                 return true;
             case ("Flyconid", "VULNERABLE_SPORES_MOVE"):
-                Debuff<VulnerablePower>(combat, player, 2, move.Owner);
+                Debuff<VulnerablePower>(simulator, combat, player, 2, move.Owner);
                 return true;
             case ("Flyconid", "FRAIL_SPORES_MOVE"):
-                Debuff<FrailPower>(combat, player, 2, move.Owner);
+                Debuff<FrailPower>(simulator, combat, player, 2, move.Owner);
                 return true;
             case ("FrogKnight", "FOR_THE_QUEEN"):
                 combat.Apply<StrengthPower>(move.Owner, 5, move.Owner);
                 return true;
             case ("FrogKnight", "TONGUE_LASH"):
-                Debuff<FrailPower>(combat, player, 2, move.Owner);
+                Debuff<FrailPower>(simulator, combat, player, 2, move.Owner);
                 return true;
             case ("GasBomb", "EXPLODE_MOVE"):
                 using (simulator.PushDamageSource(
@@ -399,23 +411,23 @@ internal static partial class MonsterMoveEffects
                 killedOwner = true;
                 return true;
             case ("GlobeHead", "SHOCKING_SLAP"):
-                Debuff<FrailPower>(combat, player, 2, move.Owner);
+                Debuff<FrailPower>(simulator, combat, player, 2, move.Owner);
                 return true;
             case ("GlobeHead", "GALVANIC_BURST"):
                 combat.Apply<StrengthPower>(move.Owner, 2, move.Owner);
                 return true;
             case ("BowlbugSilk", "TOXIC_SPIT_MOVE"):
-                Debuff<WeakPower>(combat, player, 1, move.Owner);
+                Debuff<WeakPower>(simulator, combat, player, 1, move.Owner);
                 return true;
             case ("BowlbugEgg", "BITE_MOVE"):
                 GainBlock(simulator, move.Owner, combat.GetMonsterStaticInt(move.Owner, "ProtectBlock"));
                 return true;
             case ("HauntedShip", "HAUNT_MOVE"):
-                Debuff<WeakPower>(combat, player, 3, move.Owner);
+                Debuff<WeakPower>(simulator, combat, player, 3, move.Owner);
                 simulator.AddToCombat<Dazed>(player, PileType.Discard, 5, null);
                 return true;
             case ("HunterKiller", "TENDERIZING_GOOP_MOVE"):
-                Debuff<TenderPower>(combat, player, 1, move.Owner);
+                Debuff<TenderPower>(simulator, combat, player, 1, move.Owner);
                 return true;
             case ("Guardbot", "GUARD_MOVE"):
                 foreach (Creature enemy in combat.Enemies)
@@ -441,10 +453,10 @@ internal static partial class MonsterMoveEffects
                     move.Owner);
                 return true;
             case ("KinPriest", "ORB_OF_FRAILTY_MOVE"):
-                Debuff<FrailPower>(combat, player, 1, move.Owner);
+                Debuff<FrailPower>(simulator, combat, player, 1, move.Owner);
                 return true;
             case ("KinPriest", "ORB_OF_WEAKNESS_MOVE"):
-                Debuff<WeakPower>(combat, player, 1, move.Owner);
+                Debuff<WeakPower>(simulator, combat, player, 1, move.Owner);
                 return true;
             case ("KinPriest", "RITUAL_MOVE"):
                 combat.Apply<StrengthPower>(
@@ -477,7 +489,7 @@ internal static partial class MonsterMoveEffects
                 combat.Apply<StrengthPower>(move.Owner, 3, move.Owner);
                 return true;
             case ("Mawler", "ROAR_MOVE"):
-                Debuff<VulnerablePower>(combat, player, 3, move.Owner);
+                Debuff<VulnerablePower>(simulator, combat, player, 3, move.Owner);
                 return true;
             case ("Myte", "TOXIC_MOVE"):
                 simulator.AddToCombat<Toxic>(player, PileType.Hand, 2, null);
@@ -509,7 +521,7 @@ internal static partial class MonsterMoveEffects
                 GainBlock(simulator, move.Owner, 10);
                 return true;
             case ("PunchConstruct", "FAST_PUNCH_MOVE"):
-                Debuff<FrailPower>(combat, player, 1, move.Owner);
+                Debuff<FrailPower>(simulator, combat, player, 1, move.Owner);
                 return true;
             case ("Seapunk", "BUBBLE_BURP_MOVE"):
                 GainBlock(simulator, move.Owner, combat.GetMonsterStaticInt(move.Owner, "BubbleBlock"));
@@ -538,10 +550,10 @@ internal static partial class MonsterMoveEffects
                 combat.Apply<StrengthPower>(move.Owner, combat.GetMonsterStaticInt(move.Owner, "HissStrengthGain"), move.Owner);
                 return true;
             case ("CorpseSlug", "GOOP_MOVE"):
-                Debuff<FrailPower>(combat, player, combat.GetMonsterStaticInt(move.Owner, "GoopFrailAmt"), move.Owner);
+                Debuff<FrailPower>(simulator, combat, player, combat.GetMonsterStaticInt(move.Owner, "GoopFrailAmt"), move.Owner);
                 return true;
             case ("SoulFysh", "SCREAM_MOVE"):
-                Debuff<VulnerablePower>(combat, player, combat.GetMonsterStaticInt(move.Owner, "ScreamMoveAmount"), move.Owner);
+                Debuff<VulnerablePower>(simulator, combat, player, combat.GetMonsterStaticInt(move.Owner, "ScreamMoveAmount"), move.Owner);
                 return true;
             case ("TheLost", "DEBILITATING_SMOG"):
                 int strength = combat.GetMonsterStaticInt(move.Owner, "DebilitatingSmogStrengthStealAmount");
@@ -570,7 +582,7 @@ internal static partial class MonsterMoveEffects
                 simulator.AddToCombat<Dazed>(player, PileType.Discard, 3, null);
                 return true;
             case ("Ovicopter", "TENDERIZER_MOVE"):
-                Debuff<VulnerablePower>(combat, player, 2, move.Owner);
+                Debuff<VulnerablePower>(simulator, combat, player, 2, move.Owner);
                 return true;
             case ("Ovicopter", "NUTRITIONAL_PASTE_MOVE"):
                 combat.Apply<StrengthPower>(
@@ -585,7 +597,7 @@ internal static partial class MonsterMoveEffects
                 combat.Apply<ThornsPower>(move.Owner, -5, move.Owner);
                 return true;
             case ("Stabbot", "STAB_MOVE"):
-                Debuff<FrailPower>(combat, player, 1, move.Owner);
+                Debuff<FrailPower>(simulator, combat, player, 1, move.Owner);
                 return true;
             case ("ScrollOfBiting", "MORE_TEETH"):
                 combat.Apply<StrengthPower>(move.Owner, 2, move.Owner);
@@ -594,7 +606,7 @@ internal static partial class MonsterMoveEffects
                 combat.Apply<ShrinkPower>(player, -1, move.Owner);
                 return true;
             case ("VineShambler", "GRASPING_VINES_MOVE"):
-                Debuff<TangledPower>(combat, player, 1, move.Owner);
+                Debuff<TangledPower>(simulator, combat, player, 1, move.Owner);
                 return true;
             case ("SlitheringStrangler", "THWACK"):
                 GainBlock(simulator, move.Owner, 5);
@@ -609,8 +621,8 @@ internal static partial class MonsterMoveEffects
                 combat.Apply<StrengthPower>(move.Owner, 2, move.Owner);
                 return true;
             case ("SoulNexus", "DRAIN_LIFE_MOVE"):
-                Debuff<VulnerablePower>(combat, player, 2, move.Owner);
-                Debuff<WeakPower>(combat, player, 2, move.Owner);
+                Debuff<VulnerablePower>(simulator, combat, player, 2, move.Owner);
+                Debuff<WeakPower>(simulator, combat, player, 2, move.Owner);
                 return true;
             case ("SkulkingColony", "INERTIA_MOVE"):
                 combat.Apply<StrengthPower>(
@@ -622,11 +634,11 @@ internal static partial class MonsterMoveEffects
                 simulator.AddToCombat<Slimed>(player, PileType.Discard, 10, null);
                 return true;
             case ("SlimedBerserker", "LEECHING_HUG_MOVE"):
-                Debuff<WeakPower>(combat, player, 3, move.Owner);
+                Debuff<WeakPower>(simulator, combat, player, 3, move.Owner);
                 combat.Apply<StrengthPower>(move.Owner, 3, move.Owner);
                 return true;
             case ("TerrorEel", "TERROR_MOVE"):
-                Debuff<VulnerablePower>(combat, player, 99, move.Owner);
+                Debuff<VulnerablePower>(simulator, combat, player, 99, move.Owner);
                 return true;
             case ("TwigSlimeM", "STICKY_SHOT_MOVE"):
                 simulator.AddToCombat<Slimed>(player, PileType.Discard, 1, null);
@@ -682,7 +694,7 @@ internal static partial class MonsterMoveEffects
                 combat.Apply<SoarPower>(move.Owner, 1, move.Owner);
                 return true;
             case ("OwlMagistrate", "VERDICT"):
-                Debuff<VulnerablePower>(combat, player, 4, move.Owner);
+                Debuff<VulnerablePower>(simulator, combat, player, 4, move.Owner);
                 combat.SetAmount<SoarPower>(move.Owner, 0);
                 return true;
             case ("CeremonialBeast", "STAMP_MOVE"):
@@ -692,15 +704,15 @@ internal static partial class MonsterMoveEffects
                     move.Owner);
                 return true;
             case ("CeremonialBeast", "BEAST_CRY_MOVE"):
-                Debuff<RingingPower>(combat, player, 1, move.Owner);
+                Debuff<RingingPower>(simulator, combat, player, 1, move.Owner);
                 return true;
             case ("Queen", "PUPPET_STRINGS_MOVE"):
-                Debuff<ChainsOfBindingPower>(combat, player, 3, move.Owner);
+                Debuff<ChainsOfBindingPower>(simulator, combat, player, 3, move.Owner);
                 return true;
             case ("Queen", "YOU_ARE_MINE_MOVE"):
-                Debuff<FrailPower>(combat, player, 99, move.Owner);
-                Debuff<WeakPower>(combat, player, 99, move.Owner);
-                Debuff<VulnerablePower>(combat, player, 99, move.Owner);
+                Debuff<FrailPower>(simulator, combat, player, 99, move.Owner);
+                Debuff<WeakPower>(simulator, combat, player, 99, move.Owner);
+                Debuff<VulnerablePower>(simulator, combat, player, 99, move.Owner);
                 return true;
             case ("Queen", "BURN_BRIGHT_FOR_ME_MOVE"):
                 foreach (Creature enemy in combat.Enemies)
@@ -714,7 +726,7 @@ internal static partial class MonsterMoveEffects
                 combat.Apply<StrengthPower>(move.Owner, 2, move.Owner);
                 return true;
             case ("LouseProgenitor", "WEB_CANNON_MOVE"):
-                Debuff<FrailPower>(combat, player, 2, move.Owner);
+                Debuff<FrailPower>(simulator, combat, player, 2, move.Owner);
                 return true;
             case ("LouseProgenitor", "CURL_AND_GROW_MOVE"):
                 GainBlock(simulator, move.Owner, combat.GetMonsterStaticInt(move.Owner, "CurlBlock"));
@@ -736,8 +748,8 @@ internal static partial class MonsterMoveEffects
                 combat.Apply<StrengthPower>(move.Owner, 2, move.Owner);
                 return true;
             case ("Crusher", "BUG_STING_MOVE"):
-                Debuff<WeakPower>(combat, player, 2, move.Owner);
-                Debuff<FrailPower>(combat, player, 2, move.Owner);
+                Debuff<WeakPower>(simulator, combat, player, 2, move.Owner);
+                Debuff<FrailPower>(simulator, combat, player, 2, move.Owner);
                 return true;
             case ("Crusher", "ADAPT_MOVE"):
                 combat.Apply<StrengthPower>(
@@ -755,7 +767,7 @@ internal static partial class MonsterMoveEffects
                     move.Owner);
                 return true;
             case ("TrackerRubyRaider", "TRACK_MOVE"):
-                Debuff<FrailPower>(combat, player, 2, move.Owner);
+                Debuff<FrailPower>(simulator, combat, player, 2, move.Owner);
                 return true;
             case ("Noisebot", "NOISE_MOVE"):
                 simulator.AddToCombat<Dazed>(player, PileType.Discard, 1, null);
@@ -800,8 +812,8 @@ internal static partial class MonsterMoveEffects
                     move.Owner);
                 return true;
             case ("Axebot", "HAMMER_UPPERCUT_MOVE"):
-                Debuff<WeakPower>(combat, player, 2, move.Owner);
-                Debuff<FrailPower>(combat, player, 2, move.Owner);
+                Debuff<WeakPower>(simulator, combat, player, 2, move.Owner);
+                Debuff<FrailPower>(simulator, combat, player, 2, move.Owner);
                 return true;
             case ("Aeonglass", "EBB_MOVE"):
                 GainBlock(simulator, move.Owner, combat.GetMonsterStaticInt(move.Owner, "EbbBlock"));
@@ -862,20 +874,20 @@ internal static partial class MonsterMoveEffects
                 combat.Apply<StrengthPower>(move.Owner, 2, move.Owner);
                 return true;
             case ("FakeMerchantMonster", "THROW_RELIC_MOVE"):
-                Debuff<FrailPower>(combat, player, 1, move.Owner);
+                Debuff<FrailPower>(simulator, combat, player, 1, move.Owner);
                 return true;
             case ("Fogmog", "SWIPE_MOVE"):
             case ("Fogmog", "SWIPE_RANDOM_MOVE"):
                 combat.Apply<StrengthPower>(move.Owner, 1, move.Owner);
                 return true;
             case ("FossilStalker", "TACKLE_MOVE"):
-                Debuff<FrailPower>(combat, player, 1, move.Owner);
+                Debuff<FrailPower>(simulator, combat, player, 1, move.Owner);
                 return true;
             case ("WaterfallGiant", "PRESSURIZE_MOVE"):
                 combat.Apply<SteamEruptionPower>(move.Owner, combat.GetMonsterStaticInt(move.Owner, "PressurizeAmount"), move.Owner);
                 return true;
             case ("WaterfallGiant", "STOMP_MOVE"):
-                Debuff<WeakPower>(combat, player, 1, move.Owner);
+                Debuff<WeakPower>(simulator, combat, player, 1, move.Owner);
                 combat.Apply<SteamEruptionPower>(move.Owner, 3, move.Owner);
                 return true;
             case ("WaterfallGiant", "RAM_MOVE"):
@@ -911,7 +923,7 @@ internal static partial class MonsterMoveEffects
             case ("DecimillipedeSegmentBack", "CONSTRICT_MOVE"):
             case ("DecimillipedeSegmentFront", "CONSTRICT_MOVE"):
             case ("DecimillipedeSegmentMiddle", "CONSTRICT_MOVE"):
-                Debuff<WeakPower>(combat, player, 1, move.Owner);
+                Debuff<WeakPower>(simulator, combat, player, 1, move.Owner);
                 return true;
             case ("DecimillipedeSegmentBack", "DEAD_MOVE"):
             case ("DecimillipedeSegmentFront", "DEAD_MOVE"):
@@ -923,7 +935,7 @@ internal static partial class MonsterMoveEffects
                 return true;
             case ("GremlinMerc", "DOUBLE_SMASH_MOVE"):
                 combat.RecordThievery(simulator, move.Owner);
-                Debuff<WeakPower>(combat, player, 2, move.Owner);
+                Debuff<WeakPower>(simulator, combat, player, 2, move.Owner);
                 return true;
             case ("GremlinMerc", "GIMME_MOVE"):
                 combat.RecordThievery(simulator, move.Owner);
@@ -933,7 +945,7 @@ internal static partial class MonsterMoveEffects
                 combat.Apply<StrengthPower>(move.Owner, 2, move.Owner);
                 return true;
             case ("LivingFog", "ADVANCED_GAS_MOVE"):
-                Debuff<SmoggyPower>(combat, player, 1, move.Owner);
+                Debuff<SmoggyPower>(simulator, combat, player, 1, move.Owner);
                 return true;
             case ("TheInsatiable", "LIQUIFY_GROUND_MOVE"):
                 combat.ApplyTargeted<SandpitPower>(move.Owner, player, 4, move.Owner);
@@ -944,7 +956,7 @@ internal static partial class MonsterMoveEffects
                 combat.Apply<FlutterPower>(move.Owner, 5, move.Owner);
                 return true;
             case ("TwoTailedRat", "SCREECH_MOVE"):
-                Debuff<FrailPower>(combat, player, 1, move.Owner);
+                Debuff<FrailPower>(simulator, combat, player, 1, move.Owner);
                 return true;
             default:
                 return false;
@@ -983,11 +995,17 @@ internal static partial class MonsterMoveEffects
     }
 
     private static void Debuff<T>(
+        CombatPredictionSimulator simulator,
         SimulatedCombatState combat,
         Creature target,
         int amount,
         Creature applier) where T : PowerModel
-        => combat.ApplyFromMonster<T>(target, amount, applier);
+    {
+        // Native PowerCmd.Apply refuses new powers once combat is ending,
+        // including a pending loss after a lethal monster attack.
+        if (!simulator.IsEnding)
+            combat.ApplyFromMonster<T>(target, amount, applier);
+    }
 
     private static void GainBlock(CombatPredictionSimulator simulator, Creature target, int amount)
         => simulator.GainBlock(target, amount, ValueProp.Move);

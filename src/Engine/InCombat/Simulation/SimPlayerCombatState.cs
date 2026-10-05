@@ -86,14 +86,18 @@ internal sealed class SimPlayerCombatState
 
     public int Stars { get; private set; }
     public PlayerTurnPhase Phase { get; set; }
+    public bool IsActiveForHooks { get; private set; }
 
-    public SimPlayerCombatState(PlayerCombatState liveState)
+    public SimPlayerCombatState(PlayerCombatState liveState, bool isActiveForHooks)
     {
         _liveState = liveState;
         Energy = liveState.Energy;
         Stars = liveState.Stars;
         Phase = liveState.Phase;
+        IsActiveForHooks = isActiveForHooks;
     }
+
+    public void DeactivateHooks() => IsActiveForHooks = false;
 
     private SimPlayerCombatState(PlayerCombatState liveState, int energy, int stars)
     {
@@ -183,6 +187,7 @@ internal sealed class SimPlayerCombatState
         SimPlayerCombatState fork = new(_liveState, Energy, Stars)
         {
             Phase = Phase,
+            IsActiveForHooks = IsActiveForHooks,
             _orbQueue = _orbQueue?.Fork(context),
             _hand = _hand?.Fork(context),
             _drawPile = _drawPile?.Fork(context),

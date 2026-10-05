@@ -15,7 +15,12 @@ internal sealed partial class CombatPredictionSimulator
             StateStore.ReadEntries<PowerAmountPredictionState>().ToArray();
         foreach ((AbstractModel model, PowerAmountPredictionState amount) in pending)
         {
-            if (model is PowerModel power && power.Amount != amount.Amount)
+            // Do not replay reads over authoritative removal/death cleanup.
+            // Pending consumers may change an existing attached power, but
+            // cannot attach a removed power again.
+            if (model is PowerModel power && amount.HasChanges
+                && State.IsAttachedToCombat(power.Owner) && effects.ContainsPowerSource(power)
+                && power.Amount != amount.Amount)
                 effects.SetPowerAmount(power, amount.Amount);
             StateStore.Remove<PowerAmountPredictionState>(model);
         }

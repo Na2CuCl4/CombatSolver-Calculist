@@ -15,6 +15,8 @@ description: 重构 CombatSolver 的 Search、Runtime 会话、UI snapshot、无
 
 ## 1. 先定义迁移前后的所有权
 
+Calculist 分叉保留 `CombatSolver` 命名空间并输出 `CombatSolver.Calculist` 程序集；默认关闭部署。`CustomCombatStateMirrors` / `CustomPowerMirrors` 是 Prediction 的隔离宿主契约，具体 Calculist 规则由相邻 `../CalculistDesigner/simulation/` 的 Native 登记，产品输入来自 `../Calculist/`。源码迁移后准备入口只冻结当前检出和记录 HEAD/dirty/input/DLL 哈希，不再重写检出源码或注入另一份扩展文件。结构门禁应保护该唯一所有权。
+
 搜索预算仅由 `SearchPolicySnapshot.Profile` 表达；固定预算测试/API 使用 `FixedBudget`。旧 short/deep 字段只允许在设置、归档或请求反序列化边界迁移，禁止重新引入 Search 阶段或分段计数。UI 设置与请求总计必须消费单一配置；两端结构门禁同步维护。
 
 写清楚：

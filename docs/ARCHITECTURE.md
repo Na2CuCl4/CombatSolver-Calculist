@@ -48,9 +48,17 @@
 
 预览路线的采用回放持有请求级取消令牌，单轮搜索结束与用户取消请求分别判断。强制结束回合的卡牌动作只消费自身选择，后续回合选择由AdvanceRound持有。固定前缀在仍进行的稳定父状态继续，药水统一沿正式候选政策准入。
 
+`AdvanceRound` 在玩家结束阶段二及其死亡补偿全部完成后执行安全终局检查，停止后续阵营切换、敌方开始与额外玩家回合。`IsInProgress` 是已提交标志；晚期 Hook 的待处理死亡须由 `CheckWinCondition` 在该边界提交，不能仅检查旧标志，也不能先改变 CurrentSide 再核对。当前侧历史与 continuation 保留在发生终局的阵营。
+
 `StrategicHpRecoveryBound` 在根快照中冻结回复环境资格，由 `.Remaining` 维护已审计来源闭包和分支剩余上界，未知来源保持无限上界。`.KnownSources` 单独提供当前原版已知来源策略，忽略尚未生成的随机药水回复；该策略资格不构成严格闭包证书。已有完整合规胜利可以沿既有 Retention 和组合成员入口提供界；主搜索之前的计划安排仍只对严格认证根开放，其余根保留原阶段顺序。
 
 ## 4. 模拟与 Prediction
+
+本检出为 Calculist 仿真分叉，基线为上游 0.49.1 的 `4533f6bb8c9b049aa27693e38da0f2854b31dd36`。命名空间仍为 `CombatSolver`，程序集为 `CombatSolver.Calculist`，默认 `CopyModOnBuild=false`。相邻 `../CalculistDesigner/simulation/` 持有准备脚本、隔离宿主、Calculist 规则适配与验证源码；`../Calculist/` 持有产品源码和已构建 Mod 输入。准备脚本冻结当前源码再编译，不对任何检出应用源码补丁；依赖清单分别记录真实 HEAD、dirty 状态、逐文件源码哈希、引用与 DLL 哈希。
+
+`src/Prediction/CustomCombatStateMirrors.cs` 持有隔离宿主的根捕获、分支 Fork、观察绑定、状态键与 continuation 契约；`CustomPowerExtensions.cs` 持有 Power 创建/别名/数量/移除和生命周期派发。Calculist 的具体规则由 `CalculistDesigner/simulation/runtime/calculist_adapter/` 的隔离宿主适配登记，分叉只提供唯一执行边界，不依赖 Calculist 产品程序集。`Native` 通过 friend assembly 使用内部入口，不启动 Mod UI。自定义状态存在时关闭上游执行前缀续接特化，保留完整回放与稳定 Fork 断言。
+
+自定义逐牌语义键同时用于候选选择、牌匹配、搜索状态键和 continuation；不能用同名同升级卡代替隐藏字段不同的实例。阵营切换时冻结 continuation 的当前侧历史窗口，效果自身的玩家回合计数保持独立。严格模式在 Unsupported/Inferred 派发和最终 gap 收集处拒绝未补偿语义，不能把红色风险提示当作可执行路线。
 
 | 位置 | 职责 |
 | --- | --- |
@@ -60,6 +68,14 @@
 | `src/Prediction/` | 怪物 AI、隐藏状态、生命周期、死亡/召唤、选择与 subscriber 捕获 |
 
 每项战斗语义只有一个权威结算实现。可变值由根快照、影子状态、克隆 Model 或 `PredictionStateStore` 持有。一次 Fork 共用 `PredictionForkContext`，引用随同一上下文重映射；COW 取得可写所有者后再写。
+
+玩家监听资格由 `SimPlayerCombatState.IsActiveForHooks` 在根阶段冻结并由 Fork 按值复制，进入状态指纹与 continuation。原生死亡链先完成 `AfterDeath`、Power 清理、球与宠物清理，再失活玩家监听；失活使后续战斗及跑局钩子排除其遗物、药水、牌、球与仍保留在身上的 Power，敌方 Power 继续按原生资格派发。过滤只影响监听资格，不改变 Power 数量。`MonsterSpawnSupport` 消费同一合格监听器列表，不能从遗物库存另行派发；死亡中的 HP0 不等于监听已失活。
+
+永久牌组是独立于战斗牌堆的有序分支状态。`SimulatedCombatState.PermanentDeck.cs` 冻结具体 DeckVersion 根实例及其监听来源，移除集合由 Fork 隔离，成员顺序与根实例索引进入指纹及 continuation。Swipe 偷取须移除被偷牌的具体永久实例；同名同升级牌不能合并。移出的牌及其附属监听器停止参与后续派发。逃跑不归还，死亡只创建原生奖励，领取才把原牌追加到永久牌组末尾；战外领取仍由原生宿主执行。
+
+`PowerAmountPredictionState` 区分只读缓存与实际数量写入。同步只有在 `HasChanges` 为真、拥有者仍附着于战斗且具体 Power 来源仍是有效成员时才调用权威数量入口，随后清空缓存。死亡或移除后的只读旧值不能重新写回或重新附着 Power；数量与玩家 Hook 活动资格是两个独立状态域，Fork 均保留其语义。
+
+怪物行动的致命攻击不一定终止原生方法尾部。`MonsterMoveEffects.CompletesAfterPlayerDeath` 只准入已核对的精确类型/行动，`MonsterMoveSemantics` 继续调用原有 `MonsterMoveEffects.Apply`，不复制计数、召唤或移除效果。具体命令仍按原版 ending 门禁决定是否执行：施加 Power 可以停止，移除、逃跑、自杀和方法内计数各按对应原生入口处理；未知行动不获得通用放行。
 
 Fork 发生在动作、选牌、Power、死亡和出牌事务允许复制的稳定边界。玩家记录的卡牌/药水嵌套效果作用域由引擎持有；选牌检查点保存不可变身份序列，恢复建立分支独占列表。最外层效果结束后再检查手空。稳定根及跨回合状态的该作用域为空，普通 Fork 要求为空。
 

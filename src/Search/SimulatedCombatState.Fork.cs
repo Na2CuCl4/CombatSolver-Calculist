@@ -63,6 +63,7 @@ internal sealed partial class SimulatedCombatState
             _nextCreatureId = _nextCreatureId,
             _roundNumber = _roundNumber,
             _currentSide = _currentSide,
+            _continuationEnemyHistoryBaseline = _continuationEnemyHistoryBaseline == null ? null : new Dictionary<MegaCrit.Sts2.Core.Entities.Players.Player, (int Status, int Zero, int Starts, int AttackSkill, int Attacks)>(_continuationEnemyHistoryBaseline),
             _battlewornDummyTimedOut = _battlewornDummyTimedOut,
             _rootMaterialized = _rootMaterialized,
             _statefulRelicStates = _statefulRelicStates?.Fork(),
@@ -81,6 +82,7 @@ internal sealed partial class SimulatedCombatState
             _potionUses = _potionUses?.Fork(),
             _outstandingStolenGold = _outstandingStolenGold,
             _outstandingStolenCards = _outstandingStolenCards,
+            _removedPermanentDeckCards = _removedPermanentDeckCards?.Fork(),
             _longTermResourceValue = _longTermResourceValue,
             _growthRewards = _growthRewards,
             _brightestFlameMaxHpSpent = _brightestFlameMaxHpSpent,
@@ -160,6 +162,7 @@ internal sealed partial class SimulatedCombatState
 
         RestoreHookListenerCaches(fork, context);
         context.Register(this, fork);
+        fork.CustomState = CustomCombatStateMirrors.Fork(CustomState, context);
         return fork;
     }
 
@@ -213,6 +216,7 @@ internal sealed partial class SimulatedCombatState
                 fork._effectiveHookListeners = RemapCachedModels(_effectiveHookListeners, context);
         }
 
+        fork._rootPermanentDeckListenerSources = ForkPermanentDeckListenerSources(context);
         if (_effectiveRunHookListeners is not null)
         {
             if (ReferenceEquals(_effectiveRunHookListeners, _effectiveHookListeners))

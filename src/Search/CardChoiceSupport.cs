@@ -889,7 +889,8 @@ internal static partial class CardChoiceSupport
         if (options.Count == 0)
             return null;
         simulator.History.CardsSelected(options);
-        simulator.History.RecordRisk(PredictionRiskReason.UnresolvedPlayerChoice);
+        // The exact structured request remains pending until its ContextId/tokens are consumed.
+        // Building that request is not an unmodeled effect or an unresolved final state.
         string contextId = $"seeker:{simulator.Rng.CombatCardSelection.Counter()}:" +
             string.Join(',', options.Select(card =>
                 $"{card.Preview.Id.Entry}+{card.Preview.CurrentUpgradeLevel}"));
@@ -1205,6 +1206,7 @@ internal static partial class CardChoiceSupport
                 discoverUnregisteredBaseLibModifiers))
             key.Append('-');
         CardCostStateSupport.Append(key, card);
+        key.Append("|custom=").Append(CustomCombatStateMirrors.ChoiceSemanticKey?.Invoke(card) ?? "");
         return key.ToString();
     }
 
@@ -1219,13 +1221,16 @@ internal static partial class CardChoiceSupport
 
     internal static bool MatchesToken(CardModel card, PlanCardToken token)
         => card.Id.Entry == token.CardId
-            && card.CurrentUpgradeLevel == token.UpgradeLevel;
+            && card.CurrentUpgradeLevel == token.UpgradeLevel
+            && (string.IsNullOrEmpty(CustomCombatStateMirrors.ChoiceSemanticKey?.Invoke(card)) || ChoiceCardKey(card) == token.StateKey);
 
     internal static bool MatchesToken(PredictedCard card, PlanCardToken token)
         => card.Preview.Id.Entry == token.CardId
-            && card.Preview.CurrentUpgradeLevel == token.UpgradeLevel;
+            && card.Preview.CurrentUpgradeLevel == token.UpgradeLevel
+            && (string.IsNullOrEmpty(CustomCombatStateMirrors.ChoiceSemanticKey?.Invoke(card.Preview)) || ChoiceCardKey(card) == token.StateKey);
 
     private static bool HasStableTokenIdentity(PredictedCard left, PredictedCard right)
         => left.Preview.Id.Entry == right.Preview.Id.Entry
-            && left.Preview.CurrentUpgradeLevel == right.Preview.CurrentUpgradeLevel;
+            && left.Preview.CurrentUpgradeLevel == right.Preview.CurrentUpgradeLevel
+            && (CustomCombatStateMirrors.ChoiceSemanticKey?.Invoke(left.Preview) ?? "") == (CustomCombatStateMirrors.ChoiceSemanticKey?.Invoke(right.Preview) ?? "");
 }

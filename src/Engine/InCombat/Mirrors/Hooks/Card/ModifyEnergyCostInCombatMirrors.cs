@@ -13,6 +13,8 @@ using Registry = MethodMirrorRegistry<AbstractModel, ModifyEnergyCostInCombatMir
 // Mirrors the early and late passes of Hook.ModifyEnergyCostInCombat.
 internal static class ModifyEnergyCostInCombatMirrors
 {
+    public static void Register<T>(Func<T, ModifyEnergyCostInCombatMirrorContext, decimal> handler) where T : AbstractModel => Registry.Register<T>(handler);
+    public static void RegisterLate<T>(Func<T, ModifyEnergyCostInCombatMirrorContext, decimal> handler) where T : AbstractModel => LateRegistry.Register<T>(handler);
     private static readonly MirrorMethodSpec ModifyEnergyCostInCombat = MirrorMethodSpec.Hook(
         nameof(AbstractModel.TryModifyEnergyCostInCombat),
         [typeof(CardModel), typeof(decimal), typeof(decimal).MakeByRefType()]);

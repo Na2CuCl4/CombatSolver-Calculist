@@ -78,6 +78,8 @@ internal sealed record ContinuationStamp(string StateText)
             pcs.Energy,
             pcs.Stars,
             player.Gold);
+        text.Append(";player_hooks_active=").Append(player.IsActiveForHooks);
+        SimulatedCombatState.AppendLivePermanentDeckContinuation(text, state);
         AppendOsty(text, player.Osty, player.Osty?.CurrentHp ?? 0, player.Osty?.MaxHp ?? 0);
         AppendEnemies(text, state.Enemies,
             enemy => enemy.CurrentHp,
@@ -96,6 +98,7 @@ internal sealed record ContinuationStamp(string StateText)
         SimulatedCombatState.AppendLiveStatefulRelics(text, player);
         RelicPredictionStateSupport.AppendLiveContinuation(text, player);
         ModelPredictionStateMirrors.AppendLiveContinuation(text, state);
+        text.Append(";custom_combat=").Append(CustomCombatStateMirrors.LiveContinuation(state));
         if (AdaptedCardOnPlayMirrors.CaptureLiveStamp() is { } onPlayStamp)
             text.Append(";onplay_configuration=").Append(onPlayStamp);
         if (PredictionModHookSubscriberCapture.CaptureLiveLoadoutSummonPowerState(state) is { } loadoutSummonState)
@@ -132,6 +135,8 @@ internal sealed record ContinuationStamp(string StateText)
             pcs.Energy,
             pcs.Stars,
             combat.GetPlayerGold(player));
+        text.Append(";player_hooks_active=").Append(pcs.IsActiveForHooks);
+        combat.AppendPredictedPermanentDeckContinuation(text);
         AppendOsty(
             text,
             combat.GetOsty(player),
@@ -161,6 +166,8 @@ internal sealed record ContinuationStamp(string StateText)
             combat.RelicsOf(player));
         StateFingerprintBuilder adapterFingerprint = new();
         ModelPredictionStateMirrors.AppendPredicted(ref adapterFingerprint, text, simulator, combat);
+        combat.CustomState?.BindObservation(simulator);
+        text.Append(";custom_combat=").Append(combat.CustomState?.ContinuationText ?? "");
         if (combat.AdaptedOnPlay is { } adaptedOnPlay)
             text.Append(";onplay_configuration=").Append(adaptedOnPlay.Stamp);
         if (combat.HasInactiveLoadoutSummonPowers)
@@ -399,6 +406,7 @@ internal sealed record ContinuationStamp(string StateText)
                 break;
         }
         CardCostStateSupport.Append(text, card);
+        text.Append("/custom=").Append(CustomCombatStateMirrors.ChoiceSemanticKey?.Invoke(card) ?? "");
         text.Append("/keywords=[");
         text.AppendJoin(',', card.GetKeywordsWithSources(KeywordSources.Local).Order());
         text.Append("]/baselib=");

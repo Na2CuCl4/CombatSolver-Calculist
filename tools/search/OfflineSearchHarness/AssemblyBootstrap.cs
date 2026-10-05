@@ -45,7 +45,7 @@ internal static class AssemblyBootstrap
     {
         if (string.IsNullOrEmpty(simpleName))
             yield break;
-        if (simpleName == "CombatSolver" && CombatSolverDll.Length > 0)
+        if (simpleName == "CombatSolver.Calculist" && CombatSolverDll.Length > 0)
             yield return CombatSolverDll;
         if (RitsuLibCompatDir.Length > 0)
             yield return Path.Combine(RitsuLibCompatDir, simpleName + ".dll");

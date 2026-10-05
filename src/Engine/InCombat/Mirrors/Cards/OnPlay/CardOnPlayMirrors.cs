@@ -22,6 +22,8 @@ internal static partial class CardOnPlayMirrors
 
     private static readonly Registry Registry = CreateRegistry();
 
+    public static void Register<T>(Action<T, CardOnPlayMirrorContext> handler) where T : CardModel => Registry.Register<T>(handler);
+
     public static bool AllowInference
     {
         get => Registry.AllowInference;

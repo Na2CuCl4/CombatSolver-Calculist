@@ -254,12 +254,16 @@ internal sealed class MethodMirrorRegistry<TBase, TContext>(MirrorMethodSpec met
                     break;
 
                 case MirrorDispatchKind.Inferred:
+                    if (CombatSolver.CustomCombatStateMirrors.Strict && !(receiver is MegaCrit.Sts2.Core.Models.AbstractModel inferredModel && CombatSolver.PredictionCoverage.IsKnownCompensatedMirror(inferredModel, method.BaseMethod.Name)))
+                        throw new NotSupportedException($"Strict prediction rejected inferred {receiver.GetType().FullName}.{method.BaseMethod.Name}");
                     // Inferred mirrors are always incomplete by definition. Record the risk before invoking the handler.
                     context.RecordMethodMirrorIncompleteRisk();
                     handler!(receiver, context);
                     break;
 
                 case MirrorDispatchKind.Unsupported:
+                    if (CombatSolver.CustomCombatStateMirrors.Strict && !(receiver is MegaCrit.Sts2.Core.Models.AbstractModel model && CombatSolver.PredictionCoverage.IsKnownCompensatedMirror(model, method.BaseMethod.Name)))
+                        throw new NotSupportedException($"Strict prediction rejected {receiver.GetType().FullName}.{method.BaseMethod.Name}");
                     context.RecordMethodNotMirroredRisk();
                     break;
 

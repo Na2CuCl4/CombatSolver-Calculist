@@ -32,13 +32,12 @@ internal sealed partial class SimulatedCombatState
 
     internal IEnumerable<AbstractModel> GoldAfterGainHookListeners(CombatPredictionSimulator simulator)
     {
-        foreach (Player player in _goldRunHookSnapshot.ActivePlayers)
-            if (simulator.State.GetCreature(player.Creature).CurrentHp <= 0)
-                throw new PredictionUnsupportedException("Gold callbacks for an inactive player require hook lifecycle modeling.");
-        foreach (AbstractModel listener in _rootRunHookListeners)
+        foreach (AbstractModel listener in FilterInactivePlayerHookListeners(_rootRunHookListeners))
             yield return listener;
         foreach (Player player in _goldRunHookSnapshot.ActivePlayers)
         {
+            if (!IsPlayerActiveForHooks(player))
+                continue;
             foreach (RelicModel relic in RelicsOf(player))
                 if (!relic.IsMelted)
                     yield return relic;

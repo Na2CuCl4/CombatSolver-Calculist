@@ -46,13 +46,18 @@ internal static class MonsterSpawnSupport
         bool minion = false)
     {
         combat.AddPredictedMonster(creature);
-        ApplyNativeEntrancePowers(combat, creature);
-        if (creature.Side == CombatSide.Enemy && combat.Modifiers.Any(static modifier => modifier is Murderous))
+        // CreatureCmd.Add still inserts a creature during the current lethal
+        // move. Its PowerCmd.Apply calls independently refuse ending combat.
+        if (!simulator.IsEnding)
+            ApplyNativeEntrancePowers(combat, creature);
+        if (!simulator.IsEnding && creature.Side == CombatSide.Enemy
+            && combat.Modifiers.Any(static modifier => modifier is Murderous))
             combat.Apply<StrengthPower>(creature, 3);
-        ApplyCreatureAddedRelics(simulator, combat, creature);
         combat.PreparePredictedMonster(simulator, creature);
+        ApplyCreatureAddedRelics(simulator, combat, creature);
+        if (simulator.HasPendingChoice) return;
         // The summoning move applies Minion after CreatureCmd.Add and its entrance hooks finish.
-        if (minion && combat.GetAmount<MinionPower>(creature) <= 0)
+        if (!simulator.IsEnding && minion && combat.GetAmount<MinionPower>(creature) <= 0)
             combat.Apply<MinionPower>(creature, 1, source);
     }
 
@@ -90,13 +95,19 @@ internal static class MonsterSpawnSupport
         SimulatedCombatState combat,
         Creature creature)
     {
-        foreach (RelicModel relic in combat.Players
-                     .SelectMany(combat.RelicsOf)
+        foreach (RelicModel relic in combat.IterateHookListeners()
+                     .OfType<RelicModel>()
                      .Where(relic => !relic.IsMelted))
         {
+            if (CustomPowerMirrors.TryCreatureAdded(simulator, relic, creature))
+            {
+                if (simulator.HasPendingChoice) return;
+                continue;
+            }
             switch (relic)
             {
-                case PhilosophersStone when creature.Side != relic.Owner.Creature.Side:
+                case PhilosophersStone when !simulator.IsEnding
+                    && creature.Side != relic.Owner.Creature.Side:
                     combat.Apply<StrengthPower>(creature, relic.DynamicVars["StrengthPower"].IntValue);
                     break;
                 case FurCoat furCoat when creature.Side == CombatSide.Enemy:

@@ -225,6 +225,8 @@ internal interface ICombatPredictionEffectSink
 
     void SetPowerAmount(MegaCrit.Sts2.Core.Models.PowerModel power, int amount);
 
+    bool ContainsPowerSource(MegaCrit.Sts2.Core.Models.PowerModel power);
+
     void ApplyPowerFromSource(
         Type powerType,
         MegaCrit.Sts2.Core.Entities.Creatures.Creature target,

@@ -421,8 +421,15 @@ internal sealed partial class CombatPredictionSimulator
                 ? primarySemantics.IsPrimaryEnemy(creature)
                 : creature.IsPrimaryEnemy;
 
-            // Enemy powers are cleaned by the deferred death pass; player powers are cleaned
-            // in HandlePlayerDeath before orb and pet teardown.
+            // An AfterDeath hook can revive an enemy immediately (Steam Eruption).
+            // Native cleanup follows the whole hook sequence before the command returns;
+            // a revived enemy will not enter the deferred dead-enemy cleanup pass.
+            if (creature.Side == CombatSide.Enemy && creatureState.IsAlive
+                && State.CombatState is SimulatedCombatState revivedCombat)
+                revivedCombat.RemovePowersAfterDeath(creature);
+
+            // Other enemy powers are cleaned by the deferred death pass; player powers
+            // are cleaned in HandlePlayerDeath before orb and pet teardown.
 
             if (creature.Side == CombatSide.Enemy)
             {
@@ -481,7 +488,11 @@ internal sealed partial class CombatPredictionSimulator
                 return false;
         }
 
-        // Player hook deactivation only affects a surviving multiplayer teammate's later hooks; multiplayer is out of scope.
+        // Native deactivation follows the complete death hook chain and pet
+        // teardown. Later hooks in the same lethal monster move must observe it.
+        playerState.DeactivateHooks();
+        if (State.CombatState is SimulatedCombatState hookCombat)
+            hookCombat.OnPlayerHookActivityChanged();
 
         // Mirrors CombatManager.HandlePlayerDeath, which is only called when not all players are dead.
         if (!State.Players.All(p => State.GetCreature(p.Creature).IsDead))

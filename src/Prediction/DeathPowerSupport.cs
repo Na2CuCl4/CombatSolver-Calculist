@@ -105,7 +105,7 @@ internal static class DeathPowerSupport
                     MonsterSpawnSupport.AddCreated(simulator, combat, dead, fat);
                     break;
                 case PossessSpeedPower or PossessStrengthPower:
-                    combat.RefundPossessedStats(dead);
+                    combat.RefundPossessedStats(simulator, dead);
                     break;
             }
             if (simulator.HasPendingChoice)

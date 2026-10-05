@@ -12,7 +12,10 @@ internal static partial class PredictionCoverage
 {
     public static IReadOnlyList<PredictionGap> Collect(CombatPredictionSimulator simulator)
     {
-        return CollectUniqueGaps(simulator)
+        var strictGaps = CollectUniqueGaps(simulator).ToArray();
+        if (CustomCombatStateMirrors.Strict && strictGaps.Any(gap => !gap.Compensated))
+            throw new NotSupportedException("Strict prediction gaps: " + string.Join(" | ", strictGaps.Where(gap => !gap.Compensated).Select(gap => $"{gap.SourceId}.{gap.Method}: {gap.Reason}")));
+        return strictGaps
             .OrderBy(gap => gap.SourceId, StringComparer.Ordinal)
             .ThenBy(gap => gap.Method, StringComparer.Ordinal)
             .ToList();
@@ -40,6 +43,12 @@ internal static partial class PredictionCoverage
         string method = entry.Trace?.Invocation.Method?.Name
             ?? entry.Trace?.Invocation.Action?.ToString()
             ?? "Unknown";
+        bool compensated = IsKnownCompensatedMirror(source, method);
+        return (sourceId, method, entry.Reason.ToString(), compensated);
+    }
+
+    internal static bool IsKnownCompensatedMirror(AbstractModel? source, string method)
+    {
         bool compensated = source switch
         {
             Armaments => true,
@@ -60,7 +69,7 @@ internal static partial class PredictionCoverage
             Enthralled or Normality when method == "ShouldPlay" => true,
             _ => false,
         };
-        return (sourceId, method, entry.Reason.ToString(), compensated);
+        return compensated;
     }
 
     private static bool IsVerifiedNativeRelicHook(RelicModel relic, string method)

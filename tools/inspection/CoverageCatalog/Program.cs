@@ -1037,7 +1037,7 @@ static StateFieldCatalog AuditStateFields(string combatSolverVersion)
             .ToArray();
         ModelDb.Init(gameModelTypes);
     }
-    Assembly solver = Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "CombatSolver.dll"));
+    Assembly solver = typeof(IMethodMirrorRegistryDescriptorProvider).Assembly;
     Type policy = solver.GetType("CombatSolver.SemanticStateFieldPolicy", throwOnError: true)!;
     MethodInfo classify = policy.GetMethod(
         "Classify",
@@ -1580,7 +1580,7 @@ static CoverageEntry EnrichEffectiveSupport(
 
 static HashSet<string> ReadCompensatedCardTypes()
 {
-    Assembly assembly = Assembly.Load("CombatSolver");
+    Assembly assembly = typeof(IMethodMirrorRegistryDescriptorProvider).Assembly;
     HashSet<string> result = new(StringComparer.Ordinal);
     string[] catalogNames =
     [
@@ -1607,7 +1607,7 @@ static HashSet<string> ReadCompensatedCardTypes()
 
 static HashSet<string> ReadCalculatedCardTypes()
 {
-    Assembly assembly = Assembly.Load("CombatSolver");
+    Assembly assembly = typeof(IMethodMirrorRegistryDescriptorProvider).Assembly;
     Type catalog = assembly.GetType("CombatSolver.CalculatedVarSpecRegistry", throwOnError: true)!;
     object value = catalog.GetProperty(
             "SupportedTypes",
@@ -1621,7 +1621,7 @@ static HashSet<string> ReadCalculatedCardTypes()
 
 static Dictionary<string, string> ReadMachineCardEvidence()
 {
-    Assembly assembly = Assembly.Load("CombatSolver");
+    Assembly assembly = typeof(IMethodMirrorRegistryDescriptorProvider).Assembly;
     Dictionary<string, string> result = new(StringComparer.Ordinal);
     string[] catalogNames =
     [
@@ -2046,7 +2046,7 @@ static AbstractModel CanonicalModel(Type type)
 
 static EngineMirrorInventory ReadEngineMirrorInventory()
 {
-    Assembly engineAssembly = Assembly.Load("CombatSolver");
+    Assembly engineAssembly = typeof(IMethodMirrorRegistryDescriptorProvider).Assembly;
     Dictionary<string, List<EngineRegistryInfo>> registries = new(StringComparer.Ordinal);
     foreach (Type mirrorType in engineAssembly.GetTypes()
                  .Where(type => !type.ContainsGenericParameters

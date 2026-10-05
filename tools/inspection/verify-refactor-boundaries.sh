@@ -5,6 +5,32 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repository_root="$(cd -- "$script_dir/../.." && pwd)"
 search_root="$repository_root/src/Search"
 violations=()
+while IFS=$'\t' read -r boundary_path boundary_text; do
+    if ! rg -Fq "$boundary_text" "$repository_root/$boundary_path"; then
+        violations+=("Calculist fork boundary missing: $boundary_path: $boundary_text")
+    fi
+done <<'CALCULIST_BOUNDARIES'
+CombatSolver.csproj	<AssemblyName>CombatSolver.Calculist</AssemblyName>
+CombatSolver.csproj	<CopyModOnBuild Condition="'$(CopyModOnBuild)' == ''">false</CopyModOnBuild>
+src/Prediction/CustomCombatStateMirrors.cs	state.Fork(context)
+src/Search/SimulatedCombatState.Fork.cs	fork.CustomState = CustomCombatStateMirrors.Fork(CustomState, context)
+src/Search/CardChoiceSupport.cs	CustomCombatStateMirrors.ChoiceSemanticKey
+src/Runtime/ContinuationStamp.cs	CustomCombatStateMirrors.LiveContinuation(state)
+src/Search/SimulatedCombatState.ExecutionContinuation.cs	CustomState is null &&
+src/Engine/Common/Mirrors/MethodMirrorRegistry.cs	Strict prediction rejected inferred
+src/Prediction/PredictionCoverage.cs	Strict prediction gaps:
+src/Prediction/CustomPowerExtensions.cs	CreatureAddedRegistry.Register<T>
+src/Prediction/MonsterMoveSemantics.cs	playerDied && !MonsterMoveEffects.CompletesAfterPlayerDeath(
+src/Prediction/MonsterMoveEffects.cs	public static bool CompletesAfterPlayerDeath(
+src/Search/CombatBeamSolver.Expansion.Replay.cs	terminal before a side switch resets the current-side history.
+CALCULIST_BOUNDARIES
+if rg -Fq -e '$(CalculistHostExtension)' -e '$(CalculistHostPowerExtension)' "$repository_root/CombatSolver.csproj"; then
+    violations+=("Calculist semantic extension must be maintained source, not an injected build file")
+fi
+phase_two_tail=$(awk '/playerTurnEndCompletedPhaseTwo =/ { in_phase=1 } /SimCreatureState simulatedPlayer =/ { if (in_phase) exit } in_phase { print }' "$repository_root/src/Search/CombatBeamSolver.Expansion.Replay.cs")
+if ! rg -Uq 'if \(simulator.CheckWinCondition\(simulatedCombat.GetPlayerTurnNumber\(_player\)\)\)\s*return SearchBoundaryReason.None;' <<<"$phase_two_tail"; then
+    violations+=("Completed player-end phase two must check terminal before entering another side")
+fi
 for corpus_input in tools/search/StrategyCorpus/run.py tools/search/StrategyCorpus/compare.py coverage/corpora/strategy/p0.json; do
     [[ -f "$repository_root/$corpus_input" ]] || violations+=("Strategy corpus input missing: $corpus_input")
 done
@@ -1290,7 +1316,11 @@ src/Search/CombatPlan.cs	public CombatTerminalStamp? TerminalStamp { get; } = te
 src/Search/CombatBeamSolver.Terminal.cs	combatEndedTurn = node.Snapshot.CombatEndedTurn;
 src/Search/SimulatedCombatState.cs	.Select(PredictionUtils.CloneModelForSimulation)
 src/Engine/InCombat/Mirrors/Hooks/Card/AfterCardGeneratedForCombatMirrors.cs	GetAeonglassWitherUpgradeCount(monster.Creature)
-src/Prediction/MonsterSpawnSupport.cs	.SelectMany(combat.RelicsOf)
+src/Prediction/MonsterSpawnSupport.cs	combat.IterateHookListeners()
+src/Engine/InCombat/Simulation/CombatPredictionState.cs	new SimPlayerCombatState(liveState, player.IsActiveForHooks)
+src/Engine/InCombat/Simulation/SimPlayerCombatState.cs	IsActiveForHooks = IsActiveForHooks,
+src/Engine/InCombat/Simulation/CombatPredictionSimulator.Damage.cs	playerState.DeactivateHooks();
+src/Search/SimulatedCombatState.cs	FilterInactivePlayerHookListeners(_rootRunHookListeners)
 src/Search/SimulatedCombatState.cs	foreach (BadgeModel badge in inner.BadgeModels)
 src/Search/SimulatedCombatState.cs	MultiplayerScalingRunStateField.SetValue(detachedMultiplayerScaling, null)
 src/Engine/InCombat/Mirrors/Hooks/Block/ModifyBlockMultiplicativeMirrors.cs	registry.Register<MultiplayerScalingModel>(HandleMultiplayerScaling)

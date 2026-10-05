@@ -28,6 +28,34 @@ $forbiddenSearchReferences = @(
 )
 
 $violations = [System.Collections.Generic.List[string]]::new()
+foreach ($boundary in @(
+    @{ Path = 'CombatSolver.csproj'; Text = '<AssemblyName>CombatSolver.Calculist</AssemblyName>' },
+    @{ Path = 'CombatSolver.csproj'; Text = '<CopyModOnBuild Condition="''$(CopyModOnBuild)'' == ''''">false</CopyModOnBuild>' },
+    @{ Path = 'src/Prediction/CustomCombatStateMirrors.cs'; Text = 'state.Fork(context)' },
+    @{ Path = 'src/Search/SimulatedCombatState.Fork.cs'; Text = 'fork.CustomState = CustomCombatStateMirrors.Fork(CustomState, context)' },
+    @{ Path = 'src/Search/CardChoiceSupport.cs'; Text = 'CustomCombatStateMirrors.ChoiceSemanticKey' },
+    @{ Path = 'src/Runtime/ContinuationStamp.cs'; Text = 'CustomCombatStateMirrors.LiveContinuation(state)' },
+    @{ Path = 'src/Search/SimulatedCombatState.ExecutionContinuation.cs'; Text = 'CustomState is null &&' },
+    @{ Path = 'src/Engine/Common/Mirrors/MethodMirrorRegistry.cs'; Text = 'Strict prediction rejected inferred' },
+    @{ Path = 'src/Prediction/PredictionCoverage.cs'; Text = 'Strict prediction gaps:' },
+    @{ Path = 'src/Prediction/CustomPowerExtensions.cs'; Text = 'CreatureAddedRegistry.Register<T>' },
+    @{ Path = 'src/Prediction/MonsterMoveSemantics.cs'; Text = 'playerDied && !MonsterMoveEffects.CompletesAfterPlayerDeath(' },
+    @{ Path = 'src/Prediction/MonsterMoveEffects.cs'; Text = 'public static bool CompletesAfterPlayerDeath(' },
+    @{ Path = 'src/Search/CombatBeamSolver.Expansion.Replay.cs'; Text = 'terminal before a side switch resets the current-side history.' }
+)) {
+    if (-not (Select-String -LiteralPath (Join-Path $repositoryRoot $boundary.Path) -SimpleMatch $boundary.Text -Quiet)) {
+        $violations.Add("Calculist fork boundary missing: $($boundary.Path): $($boundary.Text)")
+    }
+}
+if (Select-String -LiteralPath (Join-Path $repositoryRoot 'CombatSolver.csproj') -SimpleMatch '$(CalculistHostExtension)', '$(CalculistHostPowerExtension)' -Quiet) {
+    $violations.Add('Calculist semantic extension must be maintained source, not an injected build file')
+}
+$phaseTwoTail = [regex]::Match(
+    (Get-Content -LiteralPath (Join-Path $repositoryRoot 'src/Search/CombatBeamSolver.Expansion.Replay.cs') -Raw),
+    '(?s)playerTurnEndCompletedPhaseTwo =.*?(?=SimCreatureState simulatedPlayer =)')
+if (-not $phaseTwoTail.Success -or $phaseTwoTail.Value -notmatch 'if \(simulator.CheckWinCondition\(simulatedCombat.GetPlayerTurnNumber\(_player\)\)\)\s*return SearchBoundaryReason.None;') {
+    $violations.Add('Completed player-end phase two must check terminal before entering another side')
+}
 foreach ($relative in @('tools/search/StrategyCorpus/run.py', 'tools/search/StrategyCorpus/compare.py', 'coverage/corpora/strategy/p0.json')) {
     if (-not (Test-Path -LiteralPath (Join-Path $repositoryRoot $relative) -PathType Leaf)) {
         $violations.Add("Strategy corpus input missing: $relative")
@@ -1486,7 +1514,23 @@ $rootModelBoundaryChecks = @(
     },
     @{
         Path = Join-Path $repositoryRoot "src\Prediction\MonsterSpawnSupport.cs"
-        Text = ".SelectMany(combat.RelicsOf)"
+        Text = "combat.IterateHookListeners()"
+    },
+    @{
+        Path = Join-Path $repositoryRoot "src\Engine\InCombat\Simulation\CombatPredictionState.cs"
+        Text = "new SimPlayerCombatState(liveState, player.IsActiveForHooks)"
+    },
+    @{
+        Path = Join-Path $repositoryRoot "src\Engine\InCombat\Simulation\SimPlayerCombatState.cs"
+        Text = "IsActiveForHooks = IsActiveForHooks,"
+    },
+    @{
+        Path = Join-Path $repositoryRoot "src\Engine\InCombat\Simulation\CombatPredictionSimulator.Damage.cs"
+        Text = "playerState.DeactivateHooks();"
+    },
+    @{
+        Path = Join-Path $repositoryRoot "src\Search\SimulatedCombatState.cs"
+        Text = "FilterInactivePlayerHookListeners(_rootRunHookListeners)"
     },
     @{
         Path = Join-Path $repositoryRoot "src\Search\SimulatedCombatState.cs"

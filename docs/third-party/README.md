@@ -4,6 +4,8 @@
 
 主项目开发与社区任务面向原版游戏内容，不主动实现修改游戏内容的第三方 Mod 适配。本文记录已有扩展入口，供第三方作者自主实现和验证；适配请求单独留档。
 
+本检出是 Calculist 仿真分叉，输出 `CombatSolver.Calculist.dll`，保留上游命名空间。下文的原版默认行为属于上游兼容参考；隔离宿主开启 `CustomCombatStateMirrors.Strict` 后，未补偿的 Unsupported/Inferred 派发与 gap 必须失败，不能继续使用风险路线。分叉的状态所有权见[架构](../ARCHITECTURE.md)。
+
 求解器不认识任何第三方内容。它靠一套**镜像**（mirror）在自己的模拟里重现游戏行为，而镜像是
 按类型登记的。你的牌、Power、遗物、药水没有登记，求解器就只能退化处理，路线会算错。
 
@@ -93,6 +95,22 @@ CrabRagePower 的同伴死亡结算由 `AfterDeathMirrors` 独占：力量、格
 用于暴露缺失语义，适配者必须登记真实可打出条件，才能保证搜索按预测手牌判断合法性。
 
 ## 2. 登记点总表
+
+### Calculist 分叉的隔离宿主入口
+
+以下入口由相邻 `../CalculistDesigner/simulation/` 维护的隔离 `Native` friend assembly 在首个根捕获前登记；具体 Calculist 规则位于其 `runtime/calculist_adapter/`。这不是上游已发布的公共 API，也不授予未知 Mod 全局放行。
+
+| 入口 | 合同 |
+| --- | --- |
+| `CustomCombatStateMirrors.Register` | 捕获自定义根状态、生成 live continuation、按精确 subscriber 类型检查适配；注册后首次捕获封闭，重复或迟注册拒绝 |
+| `ICustomCombatPredictionState` | 用同一个 `PredictionForkContext` Fork 独占同类型状态；观察绑定、搜索指纹与 continuation 描述使用分支值 |
+| `ChoiceSemanticKey` | 同一逐牌语义键进入选择候选、实例匹配、搜索指纹与续用戳；空键保持上游语义 |
+| `SetPlayMode` / `IsRecurrence` / `ShouldPlay` / `CardPlayStarted` / `CardExhausted` / `AfterCardResolved` | 在唯一原生命令边界登记对应语义，保留手动与自动牌、重放和选择暂停的结算次序 |
+| `CardOnPlayMirrors.Register<T>`、`CardIsPlayableMirrors.Register<T>` 与 Card/TurnEnd/Potion registry 的 `Register*<T>` | 精确模型类型登记，复用原 registry descriptor，不建立平行支持表 |
+| `CustomPowerMirrors.RegisterAfterSideTurnEnd<T>` / `RegisterAfterEnergySpent<T>` / `RegisterAfterCreatureAdded<T>` | 注册精确类型的生命周期处理；使用标准 MethodMirrorRegistry，挂起选择立即返回；召唤先准备分支怪物，再执行遗物回调 |
+| `CustomPowerMirrors` 的数量、创建、别名、移除、持续 tick、玩家回合与格挡回调 | 捕获隐藏字段并绑定实际/预测 Power 身份；数量先走原修正再执行自定义修正与生命周期，不在外层重复结算 |
+
+这些入口解决了原版 DLL 的封闭语义：例如 Calculist 表达式的隐藏状态无法进入原版逐牌选择键；新 Power 的施加/耗能/回合末无法仅靠 OnPlay 镜像闭合；subscriber 放行还须有根捕获与分支 Fork。仅给宿主重命名引用不会产生这些能力。
 
 搜索层的 `PotionValuationRegistry` 当前是内部登记表，只迁移原版药水的战略成本档位与开局使用类型，不提供第三方注册入口。未登记的第三方药水仍使用普通战略成本；药水效果、玩家选择和分支状态仍须按下文对应的语义入口登记。
 
@@ -318,6 +336,7 @@ StrategicEffectMirrors.Register<TYourPower>(requirements, evaluate, host);
 
 | 位置 | 症状 | 状态 |
 |---|---|---|
+| `MonsterMoveEffects.CompletesAfterPlayerDeath` | 只准入已核对的五个原版精确类型/行动尾部：Fabricator/FABRICATING_STRIKE_MOVE、TestSubject/MULTI_CLAW_MOVE、OwlMagistrate/VERDICT 与 WaterfallGiant、GasBomb 的 EXPLODE_MOVE。复用原有 Apply 并保留各命令的 ending 门禁，不提供未知或第三方行动的通用致命后续登记 | 精确原版封闭语义 |
 | `StrategicHpRecoveryBound.CanCertifyRemainingHealingEnvironment` / `RemainingHealingUpperBound` | 只在已审计的原版角色、敌人、卡牌、持续效果、遗物和药水闭包内收紧剩余治疗上界；包括固定Shiv来源、Slither费用随机化及Inky虚弱；敌人集合包含逐项审计的精确SoulNexus，其三个行动与生命周期不授予玩家治疗；另含精确Regent／LouseProgenitor闭包，BurningSticks复制消耗技能的例外仍保守处理。未知来源、附魔／苦难、消耗牌被动与取回来源保守回退无限余量；再生及战后治疗继续计入。第三方语义登记不等于治疗上界证明，没有外部证书注册入口；原战斗模拟支持范围不因此扩大 | 封闭性能证明 |
 | `CombatSearchCoordinator.CanFinishNativeLouseZeroDamageRoute` / `CombatRootSnapshot.InitialRemainingHealingUpperBound` | 精确原生Regent／Louse闭包的初始治疗上界为零，且无风险满血零损无药完整胜利才停止可选药水后验；固定预算、强制药水、死亡保护、成长／遗物目标与未追回资源阻止退出。未知初始Power／药水／生成牌和剩余再生保守拒绝；没有外部证书登记入口。BurningSticks存在时拒绝消耗BundleOfJoy快捷证书；新增7牌／5Power／3遗物／2药水只在此闭包，其他环境的原表不变 | 封闭性能证明 |
 | `CombatHistoryCounterKey.ForCard` / `OpenGenerationSources` | 原版历史读者按所读计数入键，随机生成、变牌及间接生成药水来源保守全量入键；新增原版入口必须同步该表。根包含消耗堆。第三方模型、已捕获 Mod 订阅者、BaseLib 修饰器或存在 AdaptedOnPlay 快照时自动回退六项全量，不能据此支持六项之外的新历史语义；新计数仍须显式扩展历史、Fork 和指纹合同。 | 封闭语义依赖表 |

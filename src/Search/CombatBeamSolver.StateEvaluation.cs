@@ -1768,6 +1768,7 @@ internal sealed partial class CombatBeamSolver
                 key.Add(scythe.IncreasedDamage);
                 break;
         }
+        key.Add(CustomCombatStateMirrors.ChoiceSemanticKey?.Invoke(preview) ?? "");
         if (card.HasExternallyMutableAttachedModels)
             AppendBaseLibCardModifiers(ref key, preview);
         return key.Finish();

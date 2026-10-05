@@ -7,6 +7,7 @@ namespace CombatSolver;
 internal sealed partial class SimulatedCombatState : ICombatPredictionExecutionContinuationState
 {
     bool ICombatPredictionExecutionContinuationState.CanSealExecutionPrefix =>
+        CustomState is null &&
         _activeActionChoices is null && _cardExecutionScopeDepth == 0 && _activeCardExecutionDeaths is null
         && !HasPendingChoice && !_playerTurnEndRequested
         && _powerCardSources is not { Count: > 0 } && _pendingPowerAmountChanges is not { Count: > 0 }
@@ -37,6 +38,7 @@ internal sealed partial class SimulatedCombatState : ICombatPredictionExecutionC
         => _registeredCombatCards?.FirstOrDefault(candidate => candidate.References(card));
 
     bool ICombatPredictionExecutionContinuationState.CanCaptureExecutionContinuation =>
+        CustomState is null &&
         _activeActionChoices is null && _cardExecutionScopeDepth == 0 && _activeCardExecutionDeaths is null
         && PendingTurnStartChoice is { Spec: not null, Effect: not PlanChoiceEffect.ModDefined }
         && PendingKnowledgeDemonChoice is null && !_playerTurnEndRequested
