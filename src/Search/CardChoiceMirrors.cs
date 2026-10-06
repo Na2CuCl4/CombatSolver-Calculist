@@ -24,7 +24,7 @@ namespace CombatSolver;
 internal static class CardChoiceMirrors
 {
     private readonly record struct Entry(
-        Func<CombatPredictionSimulator, PredictedCard, CardChoiceSpec> Spec,
+        Func<CombatPredictionSimulator, PredictedCard, CardChoiceSpec?> Spec,
         Func<CombatPredictionSimulator, SimulatedCombatState, PredictedCard, PlanCardChoice, bool> Apply);
 
     private static readonly Dictionary<Type, Entry> Registry = [];
@@ -36,7 +36,7 @@ internal static class CardChoiceMirrors
     /// 给出这次选择的候选与上下界。候选必须是玩家在原生页面上真正看到的那几张，顺序也要一致，
     /// 而且**升级等级要对**——部署时按 CardId 加升级等级在页面上定位，选项牌跟着源牌一起升级的
     /// 效果（例如三选一的三张选项都随本牌升级）必须在这里如实反映出来，否则定位不到。
-    /// 下界给 0 表示"可以一张都不选"。
+    /// 下界给 0 表示"可以一张都不选"；本次原生效果不会请求选择时返回 null。
     /// </param>
     /// <param name="apply">
     /// 按选中的结果在模拟里施加效果，返回是否已经结算完（还有嵌套选择挂起时返回 <c>false</c>，
@@ -44,7 +44,7 @@ internal static class CardChoiceMirrors
     /// 由登记方按 CardId 自己认；求解器不会替你把令牌解析成牌。
     /// </param>
     public static void Register<TCard>(
-        Func<CombatPredictionSimulator, PredictedCard, TCard, CardChoiceSpec> spec,
+        Func<CombatPredictionSimulator, PredictedCard, TCard, CardChoiceSpec?> spec,
         Func<CombatPredictionSimulator, SimulatedCombatState, PredictedCard, TCard, PlanCardChoice, bool> apply)
         where TCard : CardModel
     {
@@ -62,7 +62,7 @@ internal static class CardChoiceMirrors
     public static bool TryGetSpec(
         CombatPredictionSimulator simulator,
         PredictedCard playedCard,
-        out CardChoiceSpec spec)
+        out CardChoiceSpec? spec)
     {
         if (Registry.Count > 0
             && Registry.TryGetValue(playedCard.Preview.GetType(), out Entry entry))

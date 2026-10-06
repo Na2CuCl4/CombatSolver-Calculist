@@ -2,6 +2,10 @@
 
 按改动选择最小验证层，方法见 [无人测试](HEADLESS_TESTING.md) 与 [社区验收](community/testing-guide.md)。以下命令提供当前复跑入口，不表示本轮已执行。
 
+卡牌条件无选择与隐式全选的最小原生回归由 Designer 的 `run_adapter_gate.py` 执行：`b-syllogism-unqualified`、`b-syllogism-one-previous-skill`、`b-syllogism-qualified-no-attacks`、`b-syllogism-qualified-one-attack`、`matrix-b-Syllogism-u0`、`native-implicit-hologram-single` 和 `native-implicit-prepared-short`。夹具交给 Native 的是完整固定计划，不过滤隐式条目；比较完整有序状态、九条 RNG 与 continuation，后两个原版代表覆盖单候选与候选不足所需数量。旧错误录制计划的消费拒绝以及原自然战斗输入的新 1000 ms 生产搜索另记为负例与真实战斗回归，不能计作新的自然路线。
+
+2026-10-05 本次结果：Designer `artifacts/simulation/native-choice-20261005-fixed-gate/verification.json` 的上述七例及 Seeker/Sly 两条嵌套代表共 9 例通过。`native-choice-20261005-battle-search/verification.json` 保持原失败战斗 input 字节、1000 ms 预算与所有比较字段，五回合胜利、19 次严格对账全等；新搜索没有选择三段论，三段论具体分支由上述配对夹具证明。`native-choice-20261005-recorded-negative/consumption-audit.json` 确认原四回合录制动作未改写，第四回合三段论多出的空选择被 `TurnStartChoiceCursor.AssertConsumed` 拒绝，拒绝前 15 次比较全等。失败的零/单攻击夹具分别保留于 `native-choice-20261005-before-zero` / `native-choice-20261005-before-one`，旧自然路线错误保留于 `p0-20261005-final-a0`。这只是最小修复回归，完整原 seed 路线仍由后继新冻结批次验收。
+
 历史记录见 [归档索引](archive/testing/README.md)，0.48.1 的验证、失败与未验证项见 [历史卷 12](archive/testing/volume-12.md)。
 
 0.49.0 的行为验证沿用本页 PR #203、#204 合并验收与 [战斗状态修复验证](archive/testing/volume-13.md)。版本及发布文档调整采用 L0 检查和发布构建；原有未验证项保留。

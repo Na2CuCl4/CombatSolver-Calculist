@@ -10,6 +10,8 @@
 
 ## 下一版本（开发中）
 
+2026-10-05：修复卡牌隐式全选产生虚构页面计划的问题。`ResolveActionCardChoice` 对已声明的确定全选立即调用原有 `CardChoiceSupport.Apply`；条件卡牌登记允许返回 nullable spec，Calculist 三段论未达到两次先前技能时不再产生空选择。显式页面和计划游标的额外选择拒绝保持。失败的自然战斗与零/单候选原生夹具保留在 Designer 独立批次，修复验证入口见 `TEST_MATRIX.md`；不修改产品玩法数值、RNG 或比较字段。
+
 Calculist 仿真分叉从上游 0.49.1 固定基线迁入已有隔离宿主适配：自定义根/分支状态、逐牌语义键、严格镜像门禁、Power 生命周期与当前侧 continuation 历史。程序集改为 `CombatSolver.Calculist`，保留命名空间，默认禁用部署。分叉持有通用求解器契约，隔离宿主、Calculist 适配与测试编排由相邻 `../CalculistDesigner/simulation/` 维护，产品由 `../Calculist/` 维护。维护源码是唯一权威，准备阶段冻结源码并直接编译；不再临时改写上游检出。版本号仍描述上游基线，不代表这些 dirty 修改已经提交或发布。
 
 本轮验证入口及局限见[测试入口](TEST_MATRIX.md)。不修改产品数值，不部署，不启动游戏客户端，不发布。

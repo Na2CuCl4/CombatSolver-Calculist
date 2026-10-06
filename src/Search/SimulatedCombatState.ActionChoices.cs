@@ -115,6 +115,18 @@ internal sealed partial class SimulatedCombatState :
     {
         TurnStartChoiceCursor choices = _activeActionChoices
             ?? throw new InvalidOperationException($"{sourceId} 在动作选择作用域外请求卡牌选择。");
+        // The native fixed-count selector returns every candidate directly when
+        // there are no more candidates than the requested count. This is a
+        // deterministic effect, not a page for the explicit plan cursor.
+        if (spec.IsImplicitAllSelection)
+        {
+            if (spec.MinCount < spec.Options.Count || spec.MaxCount < spec.MinCount)
+                throw new InvalidOperationException("Implicit all-selection cardinality differs from its complete candidate set.");
+            PlanCardChoice implicitChoice = CardChoiceSupport.BuildAutomaticPolicyChoice(spec);
+            using (simulator.BeginExecutionDispatch())
+                CardChoiceSupport.Apply(simulator, this, playedCard, implicitChoice, processedEnemyDeaths);
+            return !HasPendingChoice;
+        }
         TurnStartChoiceRequest request = new(
             sourceId,
             spec.Effect,

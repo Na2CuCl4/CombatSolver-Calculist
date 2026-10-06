@@ -61,8 +61,10 @@ CardChoiceMirrors.Register<TYourCard>(spec, apply);
 
 两个委托：
 
-- `spec(simulator, playedCard, card)` 返回一个 `CardChoiceSpec`。
+- `spec(simulator, playedCard, card)` 返回一个 `CardChoiceSpec?`。本次条件分支不请求选择时返回 `null`；下界为零的 spec 仍表示存在允许空选的页面，不能代替无选择分支。
 - `apply(simulator, combat, playedCard, card, choice)` 施加效果，返回是否已经结算完。
+
+原生固定数量选择在候选不足或恰好全部时直接返回全部候选。对应 spec 设置 `IsImplicitAllSelection`，并保持原生候选顺序；模拟器立即通过同一个 `apply` 执行，不挂起页面、不消费显式计划。真正的选择仍进入计划游标，旧计划中多出的选择仍由消费断言拒绝。登记方不能用此标记消除一个原生确实存在的选择页面。
 
 比药水那条多两件要注意的事：
 

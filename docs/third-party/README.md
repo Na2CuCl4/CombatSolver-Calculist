@@ -345,7 +345,7 @@ StrategicEffectMirrors.Register<TYourPower>(requirements, evaluate, host);
 | `PotionChoiceContinuation.Supports` | 9种原版手动选牌药水的稳定前缀特化；第三方类型与通过PotionChoiceMirrors登记覆盖原版选择者继续完整重放，无额外注册入口。普通Fork/StateStore断言保持，不能用此入口接纳不透明回调或事务 | 封闭性能特化 |
 | `SimulatedCombatState.AfterCardEnteredCombat` → `GhostSeedMirrors` | 幽灵种子按本地基础牌标签处理真实入场；已捕获根卡的关键词不会由后续归一化重新改写，入场镜像仍为原版封闭派发 | 原版封闭派发 |
 | `SimulatedCombatState.ApplyWithBeforeApplied` / `AfterCardEnteredCombat` → `PhantomBladesPowerMirrors` | 幻影之刃的首次施加和卡牌入场直接派发精确镜像体，尚未提供通用 Power.AfterApplied 注册入口；其他来源不得依赖全局归一化重新赋予关键词 | 原版封闭派发 |
-| `CardChoiceSupport.Spec` / `CardChoiceSpec.IsImplicitAllSelection` | 原版固定数量选择在候选不足或恰好全部时，按候选顺序生成唯一计划。第三方使用原版隐式全选规则时必须设置该标记；普通手动确认选择保持自己的顺序策略，Runtime对隐式选择严格核对实例和顺序 | 原版特化；第三方选择已有入口 |
+| `CardChoiceSupport.Spec` / `CardChoiceSpec.IsImplicitAllSelection` | 原版固定数量选择在候选不足或恰好全部时，按候选顺序直接执行同一选择结算，不产生显式页面计划。第三方使用原版隐式全选规则时必须设置该标记；条件分支完全不请求选择时，登记的 spec 返回 null；真实页面仍严格消费计划 | 原版特化；第三方选择已有入口 |
 | `CombatBeamSolver.CaptureEnergyRefundWindow` / `StrategicEffectContext.RecurringEnergyGain` | 原版环绕轨道按花费余数、自动化按剩余抽牌数估计未来返能，包含自然抽牌；与可消费能量缺口共用上限。第三方仍通过 §2.2 登记，详见[估值上下文](strategic-effects.md) | 原版特化；第三方估值已有入口 |
 | `RelicCounterCatalog` / `SimulatedCombatState.ReadRelicCounter` | 战斗末卡数仅覆盖已核对的十种原版计数；第三方显示计数只列出“尚未适配”，不会被自动当作跨战斗目标。见[计数策略说明](../relic-counters.md) | 精确原版适配 |
 | `SearchPolicySnapshot.IsAct3BossEncounter` / `CombatBeamSolver.CaptureAct3BossInteractionPotential` | 首领范围只含第三幕实验体、永世沙漏、女王；联动上下文只适配原版 Pagestorm、DanseMacabre、Demesne；StrategicEffectModel 对 PrepTimePower 按未来攻击与回合视野估计重复精力收益。这些不是通用第三方触发次数分析。第三方 Power 仍使用 §2.2 登记 | 原版特化；第三方估值已有入口 |
