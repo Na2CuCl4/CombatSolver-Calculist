@@ -41,3 +41,16 @@ Calculist 仿真分叉从上游 0.49.1 固定基线迁入已有隔离宿主适�
 `TestSubject.MULTI_CLAW_MOVE` 在实际攻击杀死玩家后仍递增下一次多段次数；batch-03 标准 A0/升级牌组终局为预测 `1,2/0`、真实 `1,3/0`，batch-04 高生命阶段探针同样为 `1,28/0` 对 `1,29/0`。首因是 `MonsterMoveSemantics` 在 playerDied 时跳过整个原生方法尾部。现在由单一精确谓词准入已核对的 Fabricator/FABRICATING_STRIKE_MOVE、TestSubject/MULTI_CLAW_MOVE、OwlMagistrate/VERDICT 与 WaterfallGiant、GasBomb 的 EXPLODE_MOVE，继续使用既有 `Apply`。计数、移除 Soar、召唤和自杀均保留各自唯一权威；不是把未知致命行动全部继续执行。新批次的实际验证另记。
 
 KnowledgeDemon A10/升级牌组在 batch-06 第 10 回合，玩家 HP5 被结束阶段二晚期的 DisintegrationPower8 击杀。`AdvanceRound` 先前只在阶段一之后提交终局，阶段二之后仍进入 Enemy，造成 continuation 的 Y 从真实 `0/0/2/2` 误清为 `0/0/0/0`、AttackStarts 从 2 误清为 0，并把自定义 WindowSide 从 1 改为 2。现在在完整阶段二与死亡补偿之后执行 `CheckWinCondition`，保持已开始 Hook 的结算顺序，并在侧切换前停止；不修改 History 值或比较规则来补偿。该失败与原录制牌序保留，修复验证使用新冻结批次重放同一阶段死亡。
+### Q015 路线保留（PR #227）
+
+在既有 Beam 名额内，按用药数量保留已降低敌方格挡、仍有合法攻击且敌方剩余生命不超过可执行手牌估值的收尾续路；合法攻击数沿现有手牌遍历冻结。该估值用于保路资格，实际攻击由模拟器结算。Discard／DiscardAndDraw 上下文优先保留预计安全的进攻续路。Control 在原有结束回合探测名额中保留一个可能由延迟伤害获胜的代表，再由实际试算决定。旧敌退出且新敌入场的 AliveEnemyMask 变化进入 RevivalWindow 通道。状态等价、终局政策、预算和战斗语义沿用原实现。
+
+Testing 在完整原生检查点已核验、当前手牌上限为默认 10 时迁移旧报告缺失的字段，其他续用字段继续严格比较。录制预测路径诊断支持显式指定候选池观察步数。贡献者的五主题自主搜索、原生部署、固定哨兵及未验证范围见[Q015 记录](issues/q015-route-quality.md)。
+
+### 计划续搜复用完整胜利证明（PR #229）
+
+严格组件认证根将已有及首成员新发现的完整胜利传给后续计划，沿原回复上界与政策门禁剪枝。Runtime 在重建 NoGC 的检查点请求一次压缩完整回收，确认新的完成信息与弱引用哨兵后重建区域。贡献者的 Linux 11 根交错性能数据、原生合同、失败及平台限制见[性能记录](performance/plan-witness-propagation-20261006.md)。
+
+### Smart 药水审计独立成员时间（PR #230）
+
+Smart 无强制用药、主结果无药且根有可搜索药水时，在主搜索耗尽时间后为首个可选药水层提供软预算的 1/5（1–30 秒）。该层按软预算保留结果，关联取消令牌提供 1/6 收尾时间，显式层数上限固定为一层；其他政策继续沿原入口执行。后置开局前缀补搜使用请求账本。已耗尽请求会增加这一层的实际耗时。根因、原包数据与验证范围见[Q011 记录](issues/q011-worldlines-20261006.md)。

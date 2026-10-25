@@ -1,5 +1,9 @@
 # CombatSolver 测试入口
 
+2026-10-07 PR #227–#230 的本机 `SMART-POTION-AUDIT-BUDGET`、旧报告、GC 合同，以及 O068 和固定哨兵整场部署通过。O056 最终与当前主线同为 62 战损，历史界 42 未达成；组件证明合同被 native-version 门禁拒绝。最小复跑入口、同根对照、失败及未验证范围见[整合验证](archive/testing/pr-integration-20261007.md)。
+
+贡献者 2026-10-06 的 Linux [计划续搜完整胜利证明](performance/plan-witness-propagation-20261006.md)：原生计划循环与最终 GC 合同 Passed；政策门禁、16 Fork、DOP1/16 实际成员派发与一次压缩完整回收通过，实例清理。11 根 44 次纯交错质量及峰值通过；2 次完整诊断、9 次根审计单列。未做全29根、上传包或可见性能，历史战损差异保留。
+
 0.50.0 定稿沿用 PR #207、PR #211 与开局药水准入的既有行为证据，来源和范围见 [历史卷 20](archive/testing/volume-20.md)。
 
 按改动选择最小验证层，方法见 [无人测试](HEADLESS_TESTING.md) 与 [社区验收](community/testing-guide.md)。以下命令提供当前复跑入口，不表示本轮已执行。单人共享损血剪枝的新基线验证见[策略证据](strategy/hp-loss-pruning/README.md#单人共享损血剪枝2026-10-05)。
@@ -18,14 +22,6 @@
 
 PR #213 的贡献者分阶段验证见 [Q002 历史入口](issues/q002-route-quality.md#0494-重新验证2026-10-05)。当前 0.50.0 主线整合使用 O003、O004、O005 同根、同政策对照，结果与复跑预算见 [当前验收](issues/q002-route-quality.md#0500-主线整合2026-10-05)。
 
-0.49.4 的额外回合镜像顺序、同根成长胜利续用、整场自动部署与上传引导验证见 [历史卷 16](archive/testing/volume-16.md)。
-
-0.49.0 的行为验证沿用本页 PR #203、#204 合并验收与 [战斗状态修复验证](archive/testing/volume-13.md)。版本及发布文档调整采用 L0 检查和发布构建；原有未验证项保留。
-
-0.49.3 的框架、局外 Mod 与 BaseLib 验证见 [历史卷 14](archive/testing/volume-14.md)。
-
-移动运行库内存回收验证见 [历史卷 15](archive/testing/volume-15.md)。
-
 ## Ctrl+F9 面板可见性（PR #226）
 
 快捷键、新图层、重置和监控合同的通过、失败与可见验证范围见[历史卷21](archive/testing/volume-21.md#ctrlf9-面板可见性pr-226)。
@@ -37,6 +33,16 @@ PR #213 的贡献者分阶段验证见 [Q002 历史入口](issues/q002-route-qua
 ## 0.50.1 智能药水机会成本
 
 终局单药／双药低收益拒绝与 Force、奖励抵扣、原价高收益哨兵由 `SMART-OPENING-POTION-ADMISSION` 覆盖；跨成员比较由 `python -B tools/testing/checks/BeamWidthPortfolioChecks/run.py` 覆盖（118项通过）。原生 runId `d9629992ac31423586c7465510c18f6d` Passed（23.63秒，含建局），实例已清理。失败基线、同根材料与未验证范围见[问题记录](issues/potion-opportunity-20261006.md)。
+
+## 社区批次 Q015：路线保留
+
+贡献者五主题的同根短搜、原生部署、固定哨兵及失败记录见[Q015 记录](issues/q015-route-quality.md)。维护的开战政策输入为 [High](../coverage/fixtures/search/damaging-continuation-replay-policy.json)、[Medium](../coverage/fixtures/search/damaging-continuation-medium-replay-policy.json) 与 [Force](../coverage/fixtures/search/damaging-continuation-forced-dexterity-policy.json)，原生部署使用 Instant／0 秒，断言计划外重算。本机最终整合收窄破盾收尾资格，O068 保持 3 战损、0 药、T4，独立哨兵保持 5 战损、1 药、T4，均完整部署、零重算；其余贡献者旧结果保留原验证范围。旧报告默认手牌上限兼容合同通过，详细同根对照见[本机验证](archive/testing/pr-integration-20261007.md)。
+
+## 社区批次 Q013 同根哨兵与部署夹具
+
+Q013（O056–O060，#220 / PR #228）的五条同根 `SearchOnly` 质量界夹具与两条 `DeploySolver` 夹具位于 `coverage/fixtures/regressions/community/q013-*.json`；逐条结果、失败基线与未验证项见 `coverage/evidence/test-evidence.json` 的 `Q013-*` 条目与[认领者记录](community/drafts/2026-10-06/Q013-claim-reproduction.md)。夹具依赖不入库的玩家原包 ZIP，故本页不提供行首可执行命令（与 Q010 同口径，矩阵可复跑清单条数不变）：复跑时把夹具 JSON 字段逐个传给 `tools/testing/run-unattended-test.ps1`，显式带 `-Sts2GameRoot` / `-RitsuWorkshopRoot` / `-CleanupInstanceOnExit`，判定以 `result.json.status` 为准（带实例清理时 launcher 退出码 1 不代表失败）。
+
+认领提交未改 `src`（`git diff --name-only 0d290fbe 0143d82f -- src` 为空），七条夹具在基点 `0d290fbe` 上按夹具本体全部 Passed；界锁各主题当时的实际产出，不构成改良值达标声明（O056/O057/O059 未达包内改良值，O060 默认预算下终值 35～43 摆动，O058 缺口在同一次请求内后续搜索的运行态）。合并 `6031debd` 后（`89798a78` 把 `max_hand_size` 写进续用指纹）七条全部在 `native_replay_events` 报 `restore_mismatch` 而未进入搜索，属旧包容兼容性边界，逐条 runId 与包内取证见[调查流水](archive/community/q013-claim-reproduction-20261006.md)；PR #227 的默认手牌上限兼容已进入整合，本机 O056 原生恢复通过，但历史质量界 42 未达成；其他六条夹具在最终整合上未复跑，见本页整合验证。
 
 ## 开局药水补搜准入
 
