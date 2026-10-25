@@ -306,7 +306,8 @@ internal sealed partial class CombatBeamSolver
         // The setup root is already inside this turn. Preserve events that occurred before energy reset.
         if (PersistentRelicSupport.ShouldPlayerResetEnergy(simulatedCombat, _player))
             playerState.LoseEnergy(playerState.Energy);
-        playerState.GainEnergy(PersistentPowerSupport.GetModifiedMaxEnergy(simulatedCombat, _player));
+        playerState.GainEnergy(PersistentPowerSupport.GetModifiedMaxEnergy(simulatedCombat, _player)
+            + simulatedCombat.ConsumeEnergyNextTurn(_player));
         if (simulatedCombat.HasPendingChoice
             || !PersistentPowerSupport.TriggerAfterEnergyReset(simulator, simulatedCombat, _player))
         {
@@ -983,14 +984,6 @@ internal sealed partial class CombatBeamSolver
         try
         {
         int roundHistoryEntryStart = simulator.History.Entries.Count;
-        if (!simulatedCombat.TryPrepareExtraPlayerTurn(
-                simulator,
-                _player,
-                out bool takingExtraTurn,
-                out bool hasActiveEmotionChip))
-        {
-            return SearchBoundaryReason.PendingChoice;
-        }
         int etherealExhaustCount = simulatedCombat.CountEtherealCardsInHand(simulator, _player);
         {
             using SearchMeasurementScope _ = _run.Performance.Measure(SearchMetricPhase.RoundPlayerEnd);
@@ -1048,6 +1041,8 @@ internal sealed partial class CombatBeamSolver
                 return SearchBoundaryReason.None;
         }
 
+        bool takingExtraTurn = Engine.InCombat.Mirrors.HookMirrors.ShouldTakeExtraTurn(simulator, simulatedCombat, _player);
+        bool hasActiveEmotionChip = simulatedCombat.RelicsOf(_player).Any(relic => relic is MegaCrit.Sts2.Core.Models.Relics.EmotionChip && !relic.IsMelted);
         SimCreatureState simulatedPlayer = simulator.State.GetCreature(_player.Creature);
         if (!takingExtraTurn)
         {
@@ -1238,7 +1233,8 @@ internal sealed partial class CombatBeamSolver
             // just-finished turn becomes Emotion Chip's "previous turn" window.
             if (hasActiveEmotionChip)
                 simulatedCombat.RecordRelicRoundDamage(simulator, _player, roundHistoryEntryStart);
-            simulatedCombat.ConsumeExtraTurnSources(_player);
+            if (!Engine.InCombat.Mirrors.HookMirrors.AfterTakingExtraTurn(simulator, simulatedCombat, _player))
+                return SearchBoundaryReason.PendingChoice;
         }
 
         return AdvanceRoundPlayerStart(simulator, simulatedCombat, playerState, simulatedPlayer,

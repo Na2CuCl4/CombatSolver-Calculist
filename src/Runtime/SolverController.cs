@@ -194,11 +194,13 @@ internal static partial class SolverController
         => _combat.ReplanCounts.GetValueOrDefault(ReplanCause.ManualDivergence);
     internal static bool ManualRouteImprovementDetected
         => _combat.ManualRouteImprovementDetected;
+    internal static bool AllowsPlayerUploadGuidance
+        => _combat.UploadPolicy.AllowsPlayerUploadGuidance;
     internal static bool BugReportUploadRecommended
-        => UnexpectedReplanCount > 0
+        => AllowsPlayerUploadGuidance && (UnexpectedReplanCount > 0
            || _combat.ReplanCounts.GetValueOrDefault(ReplanCause.ContinuationMissing) > 0
            || _combat.ReplanCounts.GetValueOrDefault(ReplanCause.PlanExhausted) > 0
-           || _combat.BugReportIssues.RequiresPlayerUpload;
+           || _combat.BugReportIssues.RequiresPlayerUpload);
     internal static ManualProjectionComparison? LastManualProjectionComparisonForTesting
         => _combat.LastManualProjectionComparison;
     internal static int NoGcRegionRolloverCountForTesting
@@ -450,6 +452,7 @@ internal static partial class SolverController
                 $"current_epoch={Volatile.Read(ref _combatLifecycleGeneration)}");
             return false;
         }
+        _combat.UploadPolicy.Observe(combat);
         _combat.BugReportIssues.RecordFailure(
             CombatBugReportIssueKind.TurnSetupFailure,
             exception);
@@ -474,6 +477,7 @@ internal static partial class SolverController
                 $"current_epoch={Volatile.Read(ref _combatLifecycleGeneration)}");
             return false;
         }
+        _combat.UploadPolicy.Observe(combat);
         _combat.BugReportIssues.Record(
             CombatBugReportIssueKind.TurnSetupStateMismatch,
             difference);
@@ -516,10 +520,11 @@ internal static partial class SolverController
                 $"搜索并行度必须在 1..{SolverWeights.MaximumSearchMaxDegreeOfParallelism} 之间，" +
                 $"实际为 {maxDegreeOfParallelism}。");
         }
+        SolverSearchProfile profile = UnattendedTestRunner.CheckpointProfileOverride ?? settings.Profile;
         SearchPolicySnapshot policy = new(
             UnattendedTestRunner.BeamWeightPerturbationOverride is { } beamWeightPerturbation
-                ? settings.Profile with { BeamWeightPerturbation = beamWeightPerturbation }
-                : settings.Profile,
+                ? profile with { BeamWeightPerturbation = beamWeightPerturbation }
+                : profile,
             settings.PotionPolicy,
             CapturePotionStrategy(state, settings.PotionPolicy),
             settings.EnableDetailedDiagnosticLogs,
@@ -584,6 +589,8 @@ internal static partial class SolverController
     {
         AssertMainThread();
         ResetCore("combat_starting");
+        if (state is CombatState contentState)
+            _combat.UploadPolicy.Observe(contentState);
         _combat.FullAutoEnabled = !_solverDisabled
             && state is CombatState { Players.Count: 1 }
             && SolverSettings.Current.AutoEnableFullAuto;
@@ -919,6 +926,7 @@ internal static partial class SolverController
     public static void RequestSearch(NGame host, CombatState state, SearchReason reason, bool deployWhenReady = false)
     {
         AssertMainThread();
+        _combat.UploadPolicy.Observe(state);
         if (reason == SearchReason.Manual)
             _combat.RouteFrozen = false;
         if (_combat.ShowcaseMode && reason != SearchReason.AutoTurnStart)
@@ -1210,6 +1218,11 @@ internal static partial class SolverController
                     "combat_root_snapshot",
                     settings.EnableNoGcRegion);
             }
+            searchPolicy = searchPolicy with
+            {
+                PrimaryIncumbents = _combat.AcquirePrimaryIncumbents(
+                    rootSnapshot, searchPolicy, battleDamage),
+            };
             Entry.Logger.Info(
                 $"[CombatSolver/Test] COMBAT_ROOT_CAPTURE generation={generation} " +
                 $"elapsed_ms={rootSnapshot.CaptureElapsedMilliseconds:F3} " +
@@ -1382,7 +1395,7 @@ internal static partial class SolverController
         if (exception.GetBaseException() is not IncompatibleGameplayModException incompatible)
         {
             return $"{title}\n[color={SolverUiTokens.Palette.DangerHex}]{EscapeRichText(exception.Message)}[/color]" +
-                   $"\n{SolverUiTokens.BugReportUploadInstructionRichText}";
+                   (AllowsPlayerUploadGuidance ? $"\n{SolverUiTokens.BugReportUploadInstructionRichText}" : string.Empty);
         }
 
         return FormatIncompatibleModFailure(incompatible);
@@ -1390,7 +1403,7 @@ internal static partial class SolverController
 
     private static string FormatIncompatibleModFailure(IncompatibleGameplayModException incompatible)
         => $"[color={SolverUiTokens.Palette.DangerHex}]" +
-           SolverText.Format($"检测到不兼容的第三方 Mod：{EscapeRichText(incompatible.PlayerFacingModName)}。建议卸载该 Mod 并重启游戏后再使用求解器。") + "[/color]";
+           SolverText.Format($"求解器暂未适配此内容性 Mod：{EscapeRichText(incompatible.PlayerFacingModName)}，无法求解。") + "[/color]";
 
     internal static string FormatSearchFailureForTesting(
         Exception exception,
@@ -2109,6 +2122,8 @@ internal static partial class SolverController
         LastSearchFailureForTesting = null;
         BattleDamageTracker.Reset();
         SolverOverlay.Hide();
+        // 战斗重置隐藏界面，并登记下一个可操作边界的初始化请求。
+        SolverOverlay.MarkInitializationPending();
         bool unattendedRequestActive = UnattendedAsyncActivityTracker.IsRequestActive;
         Task regionExit = unattendedRequestActive
             ? Task.CompletedTask
@@ -2266,7 +2281,8 @@ internal static partial class SolverController
         }
         BattleDamageTracker.Observe(current);
         // SL may replace the combat after TurnStarted. Reattach at the playable boundary.
-        if (!SolverOverlay.IsVisible && !IsSearching && !IsDeploying
+        // 初始化请求独立于用户通过 Ctrl+F9 选择的可见性。
+        if (SolverOverlay.InitializationPending && !IsSearching && !IsDeploying
             && !PendingCombatDeferredOperations.Any(task => !task.IsCompleted)
             && !PlayerTurnSetupCoordinator.IsManaging(current)
             && current.Players.Count == 1
@@ -2444,6 +2460,26 @@ internal static partial class SolverController
         Entry.Logger.Info($"[CombatSolver/Test] CONTROL_MODE_CHANGED mode=manual_plus_solver reason={reason}");
     }
 
+    internal static void ObserveCombatInput(string origin)
+    {
+        _search?.ObserveInput(origin);
+        if (_search is { PlayerInputObserved: true })
+            MarkManualControlObserved("search_player_input");
+    }
+
+    internal static void RecordSearchResultStale(SolverSearchSession search)
+        => _combat.BugReportIssues.Record(
+            search.PlayerInputObserved
+                ? CombatBugReportIssueKind.ManualSearchResultStale
+                : CombatBugReportIssueKind.SearchResultStale,
+            $"第 {search.StartTurnNumber} 回合");
+
+    internal static string FormatSearchResultStale(bool playerInputObserved)
+        => $"[b]{SolverText.Get("战斗路线求解器")}[/b]\n" + (playerInputObserved
+            ? SolverText.Get("手动操作改变了战斗状态，已丢弃过期结果，请重新计算。")
+            : SolverText.Get("战斗状态在计算期间发生变化，已丢弃过期结果。") +
+              (AllowsPlayerUploadGuidance ? "\n" + SolverUiTokens.BugReportUploadInstructionRichText : string.Empty));
+
     private static string CauseToken(ReplanCause cause)
         => cause switch
         {
@@ -2481,6 +2517,7 @@ internal static partial class SolverController
         AssertMainThread();
         if (!ReferenceEquals(_search, search))
             return;
+        _combat.UploadPolicy.Observe(search.State);
         _search = null;
         Volatile.Write(ref search.Interaction.Progress, null);
         int generation = search.Generation;
@@ -2526,19 +2563,16 @@ internal static partial class SolverController
             || !CanSolve(searchedState, out _)
             || LiveCombatStamp.Capture(searchedState) != searchedStamp)
         {
-            _combat.BugReportIssues.Record(
-                CombatBugReportIssueKind.SearchResultStale,
-                $"第 {LocalContext.GetMe(searchedState)?.PlayerCombatState?.TurnNumber ?? 0} 回合");
+            RecordSearchResultStale(search);
             _combat.PendingCompleteProjectionBaseline = null;
             _combat.PendingManualProjectionBaseline = null;
             _combat.LatestResult = null;
             _combat.LatestStamp = null;
             SolverOverlay.Show(
                 host,
-                "[b]战斗路线求解器[/b]\n战斗状态在计算期间发生变化，已丢弃过期结果。\n" +
-                SolverUiTokens.BugReportUploadInstructionRichText);
+                FormatSearchResultStale(search.PlayerInputObserved));
             SearchCompletionNotifier.Notify(SearchCompletionNotificationKind.Stale);
-            Entry.Logger.Info($"[CombatSolver/Test] SEARCH_STALE generation={generation}");
+            Entry.Logger.Info($"[CombatSolver/Test] SEARCH_STALE generation={generation} player_input={search.PlayerInputObserved}");
             return;
         }
 
@@ -2764,6 +2798,7 @@ internal static partial class SolverController
 
     private static void StartDeployment(NGame host, CombatState state, SolverResult result)
     {
+        _combat.UploadPolicy.Observe(state);
         bool hasCurrentTurnPlan = result.BestNode.Actions.Any(action =>
             action.Turn == result.StartTurnNumber
             && (action.IsExecutable || action.Kind == PlanActionKind.EndTurn));
@@ -2800,6 +2835,40 @@ internal static partial class SolverController
         if (UnattendedAsyncActivityTracker.IsRequestActive)
             deploymentTask = UnattendedAsyncActivityTracker.Track(deploymentTask);
         TaskHelper.RunSafely(deploymentTask);
+    }
+
+    internal static List<PlanCardChoice> CaptureDeploymentActionChoices(PlanAction action)
+        => [.. action.GetActionChoicesInExecutionOrder()];
+
+    internal static async Task DeployResolvedTurnForTesting(NGame host, CombatState state, SolverResult result)
+    {
+        AssertMainThread();
+        if (!UnattendedTestRunner.IsActive || _deployment != null)
+            throw new InvalidOperationException("Resolved-turn deployment requires an idle unattended request.");
+        SolverOverlay.ShowResult(host, SolverOverlaySnapshot.CaptureWithReviewedWorldlines(result, false, 0));
+        int count = result.BestNode.Actions.Count(action => action.Turn == result.StartTurnNumber && action.IsExecutable);
+        SolverOverlay.ShowDeploying(host, result.StartTurnNumber, count);
+        SolverDeploymentSession deployment = new() { State = state, StartTurnNumber = result.StartTurnNumber };
+        _deployment = deployment;
+        deployment.Operation = DeployCurrentTurn(host, state, result, SolverSettings.Capture(), deployment, deployment.Cancellation.Token);
+        await deployment.Operation;
+    }
+
+    internal static PlanCardChoice[] CaptureDeploymentEndTurnChoices(PlanAction action)
+        => action.TurnStartChoices?.Where(choice =>
+            choice.Timing is PlanChoiceTiming.PlayerTurnEnd or PlanChoiceTiming.EnemyTurn).ToArray() ?? [];
+
+    internal static async Task AwaitDeploymentActionChoicesAsync(NativeChoiceSession session, Task actionCompletion,
+        int endTurnChoiceCount, CancellationToken token)
+    {
+        if (endTurnChoiceCount == 0)
+        {
+            await session.AwaitProducerAndCompleteAsync(actionCompletion);
+            return;
+        }
+        await session.AwaitPhaseAsync(actionCompletion);
+        await session.WaitForAllPlansConsumedAsync(token);
+        await session.CompleteAndDetachAsync();
     }
 
     private static async Task DeployCurrentTurn(
@@ -2843,16 +2912,10 @@ internal static partial class SolverController
                 string actionTitle = action.Kind == PlanActionKind.UsePotion
                     ? SolverUiModelNames.Potion(action.PotionId, action.PotionTitle)
                     : SolverUiModelNames.Card(action.CardId, action.CardUpgradeLevel, action.CardTitle);
-                SolverOverlay.ShowDeploymentStep(actionIndex, actions.Count, actionTitle);
-                List<PlanCardChoice> actionChoices = [.. action.GetActionChoicesInExecutionOrder()];
-                // A card can advance the turn directly or through a nested auto-play, so its
-                // next-turn choices belong to this native UI session.
-                if (action.EndsPlayerTurn && action.TurnStartChoices is { Count: > 0 })
-                {
-                    // Keep the session open through the enemy turn so Knowledge Demon's
-                    // Choose A Card page is driven by the same planned sequence.
-                    actionChoices.AddRange(action.TurnStartChoices);
-                }
+                SolverOverlay.ShowDeploymentStep(turn, actionIndex, actions.Count, actionTitle);
+                List<PlanCardChoice> actionChoices = CaptureDeploymentActionChoices(action);
+                PlanCardChoice[] phaseChoices = CaptureDeploymentEndTurnChoices(action);
+                actionChoices.AddRange(phaseChoices);
                 if (actionChoices.Count > 0)
                 {
                     Entry.Logger.Info(
@@ -2867,7 +2930,8 @@ internal static partial class SolverController
                     state,
                     player,
                     $"deployment:{turn}:{actionIndex}:{action.CardId ?? action.PotionId}");
-                choiceSession.SetPlanAndStartDriving(host, actionChoices, token);
+                choiceSession.SetPlanAndStartDriving(host, actionChoices, token,
+                    detachOnLastSelection: phaseChoices.Length > 0);
                 long actionStartedAt = measureDeploymentTiming
                     ? Stopwatch.GetTimestamp()
                     : 0;
@@ -2954,7 +3018,7 @@ internal static partial class SolverController
                 }
                 try
                 {
-                    await choiceSession.AwaitProducerAndCompleteAsync(actionCompletion);
+                    await AwaitDeploymentActionChoicesAsync(choiceSession, actionCompletion, phaseChoices.Length, token);
                     RunStatistics.Activity(state, execution: true, auto: _combat.FullAutoEnabled);
                 }
                 catch (NativeChoicePlanMismatchException)
@@ -2989,7 +3053,7 @@ internal static partial class SolverController
                         $"powers={string.Join(',', player.Creature.Powers.Select(power =>
                             $"{power.Id.Entry}:{power.Amount}/{power.AmountOnTurnStart}"))}");
                 }
-                SolverOverlay.ShowDeploymentStep(actionIndex + 1, actions.Count, null);
+                SolverOverlay.ShowDeploymentStep(turn, actionIndex + 1, actions.Count, null);
                 await host.ToSignal(host.GetTree(), SceneTree.SignalName.ProcessFrame);
                 if (actionIndex + 1 < actions.Count
                     && deploymentSettings.DeploymentInterActionDelaySeconds > 0d)
@@ -3030,6 +3094,7 @@ internal static partial class SolverController
                     if ((_stopFullAutoOnDeathTurn && liveRisk.PlayerDead)
                         || (_stopFullAutoOnWorseRecalculation && worsened))
                     {
+                        _combat.UploadPolicy.Observe(state);
                         _combat.BugReportIssues.Record(
                             liveRisk.PlayerDead
                                 ? CombatBugReportIssueKind.FullAutoStoppedAtLiveRiskDeath
@@ -3056,9 +3121,7 @@ internal static partial class SolverController
                 SolverOverlay.ShowEndTurnDeploymentStep();
                 await host.ToSignal(host.GetTree(), SceneTree.SignalName.ProcessFrame);
                 token.ThrowIfCancellationRequested();
-                PlanCardChoice[] endTurnChoices = plannedEndTurn.TurnStartChoices?
-                    .Where(choice => choice.Timing is PlanChoiceTiming.PlayerTurnEnd or PlanChoiceTiming.EnemyTurn)
-                    .ToArray() ?? [];
+                PlanCardChoice[] endTurnChoices = CaptureDeploymentEndTurnChoices(plannedEndTurn);
                 if (endTurnChoices.Length > 0)
                 {
                     Entry.Logger.Info(
@@ -3068,7 +3131,7 @@ internal static partial class SolverController
                         state,
                         player,
                         $"deployment_end_turn:{turn}");
-                    choiceSession.SetPlanAndStartDriving(host, endTurnChoices, token);
+                    choiceSession.SetPlanAndStartDriving(host, endTurnChoices, token, detachOnLastSelection: true);
                     CombatManager.Instance.OnEndedTurnLocally();
                     RunManager.Instance.ActionQueueSynchronizer.RequestEnqueue(new EndPlayerTurnAction(player, turn));
                     try
@@ -3160,6 +3223,7 @@ internal static partial class SolverController
         }
         catch (Exception ex)
         {
+            _combat.UploadPolicy.Observe(state);
             _combat.BugReportIssues.RecordFailure(CombatBugReportIssueKind.DeploymentFailure, ex);
             SolverOverlay.Show(host, FormatDeploymentFailure(ex));
             Entry.Logger.Error($"[CombatSolver/Test] DEPLOY_FAILURE turn={turn} exception={ex}");
@@ -3192,6 +3256,7 @@ internal static partial class SolverController
 
     private static void PauseAfterNativeChoiceFailure(NGame host, SolverDeploymentSession deployment, int turn, Exception failure)
     {
+        _combat.UploadPolicy.Observe(deployment.State!);
         _combat.ContinuationSource = null;
         _combat.FullAutoEnabled = false;
         _combat.AutomaticSearchPaused = true;
@@ -3511,24 +3576,24 @@ internal static partial class SolverController
         => exception.GetBaseException() is IncompatibleGameplayModException incompatible
            ? FormatIncompatibleModFailure(incompatible)
            : $"[color={SolverUiTokens.Palette.DangerHex}][b]{SolverText.Get("计算失败")}[/b]\n" +
-           $"{EscapeRichText(exception.Message)}[/color]\n" +
-           SolverUiTokens.SearchFailureInstructionRichText(parallelSearchWasEnabled);
+           $"{EscapeRichText(exception.Message)}[/color]" +
+           (AllowsPlayerUploadGuidance ? "\n" + SolverUiTokens.SearchFailureInstructionRichText(parallelSearchWasEnabled) : string.Empty);
 
-    private static string FormatDeploymentFailure(Exception exception)
+    internal static string FormatDeploymentFailure(Exception exception)
         => exception.GetBaseException() is IncompatibleGameplayModException incompatible
            ? FormatIncompatibleModFailure(incompatible)
            : $"[color={SolverUiTokens.Palette.DangerHex}][b]{SolverText.Get("自动执行中止")}[/b]\n" +
-           $"{EscapeRichText(exception.Message)}[/color]\n" +
-           SolverUiTokens.BugReportUploadInstructionRichText;
+           $"{EscapeRichText(exception.Message)}[/color]" +
+           (AllowsPlayerUploadGuidance ? "\n" + SolverUiTokens.BugReportUploadInstructionRichText : string.Empty);
 
-    private static string FormatTurnSetupFailure(
+    internal static string FormatTurnSetupFailure(
         Exception exception,
         bool parallelSearchWasEnabled)
         => exception.GetBaseException() is IncompatibleGameplayModException incompatible
            ? FormatIncompatibleModFailure(incompatible)
            : $"[color={SolverUiTokens.Palette.DangerHex}][b]{SolverText.Get("回合准备选牌失败")}[/b]\n" +
-           $"{EscapeRichText(exception.GetBaseException().Message)}[/color]\n" +
-           SolverUiTokens.SearchFailureInstructionRichText(parallelSearchWasEnabled);
+           $"{EscapeRichText(exception.GetBaseException().Message)}[/color]" +
+           (AllowsPlayerUploadGuidance ? "\n" + SolverUiTokens.SearchFailureInstructionRichText(parallelSearchWasEnabled) : string.Empty);
 
     private static void CancelDeployment()
     {

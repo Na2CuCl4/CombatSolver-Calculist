@@ -50,4 +50,11 @@ internal sealed partial class SimulatedCombatState
         foreach (AbstractModel listener in _modHookSubscribers.RunSubscribers)
             yield return listener;
     }
+
+    internal IEnumerable<AbstractModel> GoldModifierHookListeners(CombatPredictionSimulator simulator)
+    {
+        foreach (AbstractModel listener in ((ICombatPredictionHookListenerSource)this).RunHookListeners)
+            if (IsPlayerHookListenerActive(listener))
+                yield return listener;
+    }
 }

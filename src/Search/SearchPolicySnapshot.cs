@@ -20,6 +20,8 @@ internal sealed record SearchPolicySnapshot(
     SearchMemoryPressureSignal MemoryPressureSignal)
 {
     internal CancellationToken? RouteAdoptionCancellationToken { get; init; }
+    internal PrimaryIncumbentTable? PrimaryIncumbents { get; init; }
+    internal bool DisableSharedPrimaryIncumbentsForTesting { get; init; }
     public bool UseNoveltyPortfolio { get; init; }
     public int EarlyTurnExplorationDepth { get; init; }
     public int EarlyTurnExplorationBudgetMilliseconds { get; init; }

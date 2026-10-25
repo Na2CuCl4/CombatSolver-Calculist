@@ -74,10 +74,7 @@ internal static class BeforeSideTurnEndMirrors
 
         registry.Register<PlatingPower>(HandlePlatingPower);
         registry.Register<RegenPower>(HandleRegenPower);
-        // PrepareExtraPlayerTurn resolves Pael's Eye before the turn history is rolled.
-        // Re-evaluating it here would see the freshly reset history and exhaust hands
-        // even on turns where the player actually played cards.
-        registry.RegisterIgnored<PaelsEye>();
+        registry.Register<PaelsEye>(HandlePaelsEye);
 
         return registry;
     }
@@ -110,6 +107,13 @@ internal static class BeforeSideTurnEndMirrors
         {
             context.Simulator.GainBlock(power.Owner, power.Amount, ValueProp.Unpowered);
         }
+    }
+
+    private static void HandlePaelsEye(PaelsEye relic, BeforeSideTurnEndMirrorContext context)
+    {
+        if (context.Participants.Contains(relic.Owner.Creature)
+            && context.State.CombatState is SimulatedCombatState combat && combat.ShouldTriggerPaelsEye(relic))
+            SimulatedCombatState.TriggerPaelsEye(context.Simulator, relic.Owner, relic);
     }
 
     private static void HandleRegenPower(RegenPower power, BeforeSideTurnEndMirrorContext context)

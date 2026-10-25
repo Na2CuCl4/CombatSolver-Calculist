@@ -21,7 +21,8 @@ namespace CombatSolver;
 
 internal readonly record struct PrimarySearchIncumbent(
     int StrategicHpDeficit,
-    int CombatEndedTurn);
+    int CombatEndedTurn,
+    int? ExplicitPotionStrategicCost = null);
 
 internal sealed partial class CombatBeamSolver(
     CombatRootSnapshot root,
@@ -92,6 +93,10 @@ internal sealed partial class CombatBeamSolver(
     private readonly int? _earliestPotionTurn = earliestPotionTurn;
     private readonly PotionFreePolicyBaseline? _potionFreePolicyBaseline = potionFreePolicyBaseline;
     private PrimarySearchIncumbent? _primaryIncumbent = primaryIncumbent;
+    private readonly bool _useSharedPrimaryIncumbents = !policy.DisableSharedPrimaryIncumbentsForTesting
+        && PrimaryIncumbentTable.CanShareRoot(root);
+    private readonly PrimaryIncumbentTable _primaryIncumbents = policy.DisableSharedPrimaryIncumbentsForTesting
+        || !PrimaryIncumbentTable.CanShareRoot(root) ? new() : policy.PrimaryIncumbents ?? new();
     private readonly SearchInteractionState? _interaction = policy.Interaction;
     private readonly DevelopmentSearchStrategy? _developmentStrategy = policy.DevelopmentStrategy;
     private readonly IReadOnlyList<PlanAction> _fixedPrefixActions = fixedPrefixActions ?? [];

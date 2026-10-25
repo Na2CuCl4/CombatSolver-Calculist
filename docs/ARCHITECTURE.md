@@ -15,6 +15,7 @@
 | `src/Runtime/Entry.cs` | 初始化、战斗生命周期接线 |
 | `SolverController.cs` | 主线程请求、结果接收、续用、部署和自动执行 |
 | `SolverControllerSessions.cs` | 战斗、搜索、部署会话生命周期 |
+| `CombatBugReportUploadPolicy.cs` / `CombatBugReportDescription.cs` | 当前战斗内容的上传引导资格与真实错误分类；搜索会话单独记录期间玩家输入 |
 | `CombatRootSnapshot.cs` | 在主线程捕获并核对稳定根 |
 | `ContinuationStamp.cs` | live / predicted 跨回合一致性和字段差异 |
 | `SearchGcPolicy.cs` | 进程 GC、NoGC 和跨战斗回收协调 |
@@ -25,6 +26,8 @@
 政策由主线程从设置冻结到 `SearchPolicySnapshot`。后台通过请求参数、诊断 sink 与压力信号消费外部能力；算法不读取设置单例或操作 GC。Power 显示变量在主线程根捕获时物化；worker 只消费已物化值。克隆并发边界由 `BaseLibCloneConcurrencyPatch` 与原生克隆隔离规则维护。
 
 常规 GC 搜索的系统余量、分配限额和 Gen2 回收由 Runtime 作用域持有，Search 只在排空后的提交边界消费压力信号。常规检查点刷新请求限额；不可分割提交通过显式退出将分配交给 CLR，下一请求重新建立限额。Runtime 在限额和诊断成功后登记作用域，入口失败释放信号并传播原异常；退出时按作用域清理计数和信号。
+
+`SearchGcRuntimeInfo` 在 Runtime 一次探测按类型查询 GC 信息的能力。具备完整信息时保留后台回收与完成索引核对；Mono 等运行库使用同步完整回收和弱引用完成哨兵。暂停观测通过压力信号传递为可空值，Search 消费实际观测并保留其他工作量；检查点及回收日志明确标记不可用的暂停统计。
 
 ## 3. Search
 
@@ -43,8 +46,21 @@
 | `.FinalPlanOrdering.cs` / `RouteQualityPolicy` | 完整路线质量与各既有投影顺序 |
 | `.StateEvaluation.cs` / `.Terminal.cs` | 评分特征、终局回放和回合结果 |
 | `SimulatedCombatState*.cs` | 分支战斗状态与动作语义 |
+| `PrimaryIncumbentTable` / `ResourceIncumbentPolicy` | 同根同政策的资源桶见证、未来收益上界与认证回退 |
 
-成员共享原请求账本；预算准入、候选合法性和取优由所属策略决定。分支状态不承担 Beam 政策；中途保路和终局比较保持明确入口。药水反事实与强制用药的硬准入先于质量比较。固定前缀构造实际父链，EndTurn 从模拟前后状态生成 `TurnOutcome`。
+成员共享原请求账本；预算准入、候选合法性和取优由所属策略决定。分支状态不承担 Beam 政策；中途保路和终局比较保持明确入口。药水反事实与强制用药的硬准入先于质量比较。终局可选用药遵守机会成本门槛，获胜且减少复活消耗或追回资源时保留对应政策例外；`RouteQualityPolicy.PotionPolicy` 为审计、组合成员和后置搜索统一比较战略战损加可选药水成本，成长与回合数在其后比较。固定前缀构造实际父链，EndTurn 从模拟前后状态生成 `TurnOutcome`。
+
+`CombatSearchCoordinator.Audits` 的智能开局药水补搜逐成员扣除请求剩余节点和时间。开局成员沿用智能梯度同一次请求计算出的用药准入上限，首回合及损血边界续搜也受该上限约束；保留上游净差、必然受击及整场战损三轴准入。无药路线只有死亡、尚无完整胜利时，最后一个生成能力成员可复用同药水选择成员自生的完整首回合动作，并在其他复合前缀前调度；缓存只存纯值动作，不持有节点或实机状态。仍占原成员名额，沿既有前缀回放重建调度基线、普通排序及药水资格比较，不增加配置容量。
+
+取得安全、最多两瓶且仍损血的完整胜利后，仅一个剩余复合成员可复用该路线最后损血回合之前的完整动作；边界由结果已有的逐回合损血摘要确定，前缀须含登记能力且结束于上一回合。消费原成员宽度，并从共享剩余节点/时间中按剩余名额分配一份有界续搜额度；其他成员保持原前缀和政策。全程只使用当前结果的纯值动作与摘要，最终仍按整场政策取优，不解析报告、不持有节点图或读取实机。
+
+`PowerCommitmentRetention` 按机制族、登记能力集合、药水数量与回合选择有界代表；能力激活顺序不重复占席，不同能力集合不因族相同而合并。Beam 只保护实际代表，其他能力节点不预占代表配额；替换保持容量和既有必保节点。完整状态键、转置支配及终局政策不消费这种启发式分组。显式路径观察只复制纯值承诺及独立字符串数组，不保留节点或模拟器。
+
+`CombatSearchCoordinator.PowerRepair` 在既有强制用药能力成员中选取已满足全部 Force 的回合边界。`CombatBeamSolver.CanContinueAtPrefix` 从冻结根完整回放该前缀，要求动作全部应用、仍存活、战斗继续且处于无风险稳定状态；随后发生的死亡由后续搜索处理。协调器只保留纯值前缀，沿现有成员容量继续求解。
+
+组合补搜入口按基线完成情况与节点、时间余量准入。每个成员在 `CombatBeamSolver.Phases` 的提交边界预约内存，Runtime 检查点执行回收和区域重建，连续无进展时结束当前成员；成员可跨多个区域完成，累计分配量由组合诊断记录。
+
+资源桶按失窃量、用药量、成长次数向量、遗物目标组合分层。CombatRootSnapshot 冻结根成长上界，ResourceIncumbentPolicy 另在保路时只读认证分支剩余上界；不改变分支状态键或续用戳。纯成长目标在已实现次数至分支上界之间逐桶消费独立战损基准，所有可能目标均无改进空间才停止公共展开。目标集合过大或上界未知保留搜索；混合遗物目标沿用最乐观最终资源桶。Runtime 会话只携带已保留的完整零药路线及对应桶，不跨根或政策沿用数值界。 已有剩余治疗界且没有成长目标/奖励、全部遗物计数HP额度为零时，标量界可跨满足掩码剪掉严格更差HP；同HP晚回合继续保留。资格、局部收紧及实际执行入口使用同一规则，付费计数与成长仍按资源桶处理。
 
 预览路线的采用回放持有请求级取消令牌，单轮搜索结束与用户取消请求分别判断。强制结束回合的卡牌动作只消费自身选择，后续回合选择由AdvanceRound持有。固定前缀在仍进行的稳定父状态继续，药水统一沿正式候选政策准入。
 
@@ -52,9 +68,11 @@
 
 `StrategicHpRecoveryBound` 在根快照中冻结回复环境资格，由 `.Remaining` 维护已审计来源闭包和分支剩余上界，未知来源保持无限上界。`.KnownSources` 单独提供当前原版已知来源策略，忽略尚未生成的随机药水回复；该策略资格不构成严格闭包证书。已有完整合规胜利可以沿既有 Retention 和组合成员入口提供界；主搜索之前的计划安排仍只对严格认证根开放，其余根保留原阶段顺序。
 
+`.Components` 组合逐项审查的卡牌、生成池、Power、遗物、药水和敌人证明，并锁定审计的原生 MVID。Runtime 在稳定根捕获证书及拒绝原因；模拟状态只提供已捕获的战斗、永久牌组和全局监听前缀，不读取 live。资格随根冻结，分支上界重新检查牌堆、待返回牌、层数和用药记录，未知来源不调用已知来源估计来收紧无限界。Smart 的精确用药层及开局用药后续搜索复用同一节血门槛；完整无药胜利基线经既有 continuation 请求传递，成长、遗物、强制用药、资源追回和保命资源门禁仍保留。证书是搜索元数据，不进入战斗指纹或续用文本。
+
 ## 4. 模拟与 Prediction
 
-本检出为 Calculist 仿真分叉，基线为上游 0.49.1 的 `4533f6bb8c9b049aa27693e38da0f2854b31dd36`。命名空间仍为 `CombatSolver`，程序集为 `CombatSolver.Calculist`，默认 `CopyModOnBuild=false`。相邻 `../CalculistDesigner/simulation/` 持有准备脚本、隔离宿主、Calculist 规则适配与验证源码；`../Calculist/` 持有产品源码和已构建 Mod 输入。准备脚本冻结当前源码再编译，不对任何检出应用源码补丁；依赖清单分别记录真实 HEAD、dirty 状态、逐文件源码哈希、引用与 DLL 哈希。
+本检出为 Calculist 仿真分叉，基线为上游 `5c773caaec742bc55588bc9ee21c361326a732f0`，包含 0.50.1 及后续未发布改动。命名空间仍为 `CombatSolver`，程序集为 `CombatSolver.Calculist`，默认 `CopyModOnBuild=false`。相邻 `../CalculistDesigner/simulation/` 持有准备脚本、隔离宿主、Calculist 规则适配与验证源码；`../Calculist/` 持有产品源码和已构建 Mod 输入。准备脚本冻结当前源码再编译，不对任何检出应用源码补丁；依赖清单分别记录真实 HEAD、dirty 状态、逐文件源码哈希、引用与 DLL 哈希。
 
 `src/Prediction/CustomCombatStateMirrors.cs` 持有隔离宿主的根捕获、分支 Fork、观察绑定、状态键与 continuation 契约；`CustomPowerExtensions.cs` 持有 Power 创建/别名/数量/移除和生命周期派发。Calculist 的具体规则由 `CalculistDesigner/simulation/runtime/calculist_adapter/` 的隔离宿主适配登记，分叉只提供唯一执行边界，不依赖 Calculist 产品程序集。`Native` 通过 friend assembly 使用内部入口，不启动 Mod UI。自定义状态存在时关闭上游执行前缀续接特化，保留完整回放与稳定 Fork 断言。
 
@@ -81,6 +99,12 @@ Fork 发生在动作、选牌、Power、死亡和出牌事务允许复制的稳�
 
 未知 gameplay subscriber 显式拒绝；已支持来源在主线程捕获，并在分支中消费隔离状态。登记合同与封闭入口见 [第三方适配手册](third-party/README.md)。
 
+资源初始化冻结玩家基础最大能量，最大能量与抽牌按分支监听表、回合号及遗物隐藏状态结算；准备根和普通跨回合都一次性消费延迟能量。玩家 Hook 活动标志由引擎在死亡清理时关闭，Fork 继承并进入状态键，金币回调据此筛选成员。攻击意图由分支当前怪物 AI 行动派生，行动替换即时生效。
+
+回合末自动出牌先于 BeforeSideTurnEndEarly，PAELS_EYE 的手牌消耗由该 Hook 镜像拥有；额外回合资格在阶段结算后判断。部署会话区分动作、玩家结束／敌方阶段与下一玩家回合；最后一个结束阶段选择确认前解除旧会话归属。UI 的步骤和完成回调核对所属回合及当前路线快照。
+
+额外回合的判断与后置效果由 `ExtraTurnMirrors` 登记原版和第三方单项语义，`HookMirrors` 按原生监听顺序派发。后置回调使用固定成员快照，选牌暂停沿动作重放恢复；分支 Power 与帕尔之眼使用状态继续由 `SimulatedCombatState` 持有。
+
 金币命令由 `GoldGainSupport` 串联标准镜像：修改使用跑局前缀和战斗监听表，获得后的回调使用原生 null-child 跑局作用域。`SimulatedCombatState.GoldHooks` 在主线程冻结活动成员与已克隆全局来源，Fork 只读共享；遗物、药水、金币和 HP 仍从所属分支读取。未知金币 override 显式拒绝。监听参与位图为三个金币方法共用一位，只形成保守成员超集，精确方法仍由 registry 区分；不溢出或复用其他 Hook 位。`CombatPredictionSimulator.GainMaxHp` 单独实现实际封顶增量与后续 Heal，Feed、FruitJuice 和 DragonFruit 共用这一权威入口。
 
 ## 5. UI
@@ -93,6 +117,8 @@ Fork 发生在动作、选牌、Power、死亡和出牌事务允许复制的稳�
 
 源码按 [Testing 入口](../src/Testing/README.md) 收纳：Host 持有编排与协议，Support 持有共享差分辅助，Replay 持有恢复；Contracts 按 Combat/Search/Runtime/UI/ThirdParty 分组，Regressions 保存社区和报告回归。各目录沿用原程序集与 partial 类型。
 
+组件剩余回复上界和 Smart 用药资格合同位于 `Contracts/Search`；根状态与完整原生差分仍由既有 Support/Runtime 合同提供，不改变 partial 方法、请求路由或状态所有权。
+
 | 入口 | 所有权 |
 | --- | --- |
 | `UnattendedTestRunner` | 请求级编排与共享 fixture helper |
@@ -100,9 +126,17 @@ Fork 发生在动作、选牌、Power、死亡和出牌事务允许复制的稳�
 | `ScenarioBuilder` | 建局与状态注入 |
 | `Executor` | 差分、搜索、部署执行及临时设置 |
 | `Assertions` | 执行前后断言 |
-| `Writer` | 结果协议和原子写入 |
+| `Writer` | 结果协议和原子写入；求解侧实测值（含 `UnavoidableHpLost`）在此进入 `UnattendedSolverMetrics`，两平台 launcher 的 `ExpectedInitial*` 参数只做透传，断言落在 Contracts |
 
 原生与模拟核对完整状态、顺序、引用、RNG 和续用合同。离线宿主只产搜索指标；headless 不证明真实可见布局或帧时间。入口见 [无人测试](HEADLESS_TESTING.md)、[离线宿主](OFFLINE_SEARCH_HARNESS.md)、[测试证据](TEST_MATRIX.md)。
+
+检查点完整搜索 profile 由 `ProtocolHost` 在请求内持有，Runtime 捕获政策时读取其不可变记录；请求结束清除。显式 CLI 扰动沿既有入口覆盖单项，不将测试 profile 写入玩家设置或后台读取器。
+
+保存预测路线的读取、严格回放、路径观察及原生终局断言属于Testing；生产Search不识别报告或测试场景。通用`RecordedPlan`与`KnownRoutePathTrace`消费归档中的完整路线作为只读观察目标，严格回放先核对原生身份、完整状态及增量等价；路径观察运行正常协调器，不注入固定前缀。Q002专属一次性路线/成员诊断已移除，机制合同和历史证据保留。部署沿现有Runtime入口，跨战斗结束的真实后台搜索代次只通过`SolverController.Testing`只读暴露；不以会话清零计数或已清空的临时账本推断终局。
+
+能力路线组合的候选与名额选择仍归`CombatSearchCoordinator.PowerRoutes`：安全且有明显损血的无新增用药胜利可将首个单能力组合的已有宽、次排序及最后成员用于自身首回合结束处续搜，动作来自当前搜索结果。宽成员可追加边界上真实可打、按登记优先级选择的能力；组合一旦准入，后续成员资格不会因中间胜利低于原触发门槛而失效。保留原四成员容量、各自宽度/预算和次排序配置。既有调度器负责严格前缀回放与启发式基线重建，最终整场政策比较不变。
+
+既有成员时间低于`MinimumPowerRouteMilliseconds`时，自生首回合续搜也可先追加边界上可用的最高登记优先级能力；短成员无需重新搜索该铺垫。仍沿同一构建入口执行合法性检查，不追加成员、提高宽度或预算；未取得安全胜利、能力不可打或未满足原准入时不改变原规则。
 
 旧批次的硬编码路径调查退出当前树，仍被原生回归、生成上下文与搜索合同调用的快照辅助保留在 Support。一次性验证代码由 .local/tool-tasks 持有并在任务结束清理，普通构建显式排除 .local 源码。
 

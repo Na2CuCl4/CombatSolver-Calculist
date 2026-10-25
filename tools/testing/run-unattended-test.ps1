@@ -157,6 +157,7 @@ param(
     [int]$ExpectedInitialNodeLimitSnapshotsReleasedAtLeast = -1,
     [int]$ExpectedInitialChoiceBranchesEvaluatedAtLeast = -1,
     [int]$ExpectedInitialExecutableActionCountAtLeast = -1,
+    [int]$ExpectedInitialUnavoidableHpLost = -1,
     [int]$ExpectedInitialSoldHp = -1,
     [int]$ExpectedInitialSoldHpAtMost = -1,
     [int]$ExpectedInitialDeathSaveRelicHp = -1,
@@ -670,20 +671,7 @@ if ($StopInstance) {
 
 New-Item -ItemType Directory -Path $dataDir -Force | Out-Null
 New-Item -ItemType Directory -Path $headlessLocal -Force | Out-Null
-if (-not (Test-Path -LiteralPath (Join-Path $dataDir "default") -PathType Container)) {
-    foreach ($directory in @("default", "ModConfig", "mod_configs")) {
-        $source = Join-Path $interactiveDataDir $directory
-        if (Test-Path -LiteralPath $source -PathType Container) {
-            Copy-HeadlessProfileTree $source $dataDir
-        }
-    }
-    $sourceModConfig = Join-Path $interactiveDataDir "mods\config"
-    if (Test-Path -LiteralPath $sourceModConfig -PathType Container) {
-        $targetMods = Join-Path $dataDir "mods"
-        New-Item -ItemType Directory -Path $targetMods -Force | Out-Null
-        Copy-HeadlessProfileTree $sourceModConfig $targetMods
-    }
-}
+Initialize-HeadlessProfile $interactiveDataDir $dataDir
 $settingsPath = Join-Path $dataDir "default\1\settings.save"
 if (-not (Test-Path -LiteralPath $settingsPath -PathType Leaf)) {
     throw "Headless settings save not found after profile initialization: $settingsPath"
@@ -897,6 +885,7 @@ $request = [ordered]@{
     expectedInitialNodeLimitSnapshotsReleasedAtLeast = if ($ExpectedInitialNodeLimitSnapshotsReleasedAtLeast -ge 0) { $ExpectedInitialNodeLimitSnapshotsReleasedAtLeast } else { $null }
     expectedInitialChoiceBranchesEvaluatedAtLeast = if ($ExpectedInitialChoiceBranchesEvaluatedAtLeast -ge 0) { $ExpectedInitialChoiceBranchesEvaluatedAtLeast } else { $null }
     expectedInitialExecutableActionCountAtLeast = if ($ExpectedInitialExecutableActionCountAtLeast -ge 0) { $ExpectedInitialExecutableActionCountAtLeast } else { $null }
+    expectedInitialUnavoidableHpLost = if ($ExpectedInitialUnavoidableHpLost -ge 0) { $ExpectedInitialUnavoidableHpLost } else { $null }
     expectedInitialSoldHp = if ($ExpectedInitialSoldHp -ge 0) { $ExpectedInitialSoldHp } else { $null }
     expectedInitialSoldHpAtMost = if ($ExpectedInitialSoldHpAtMost -ge 0) { $ExpectedInitialSoldHpAtMost } else { $null }
     expectedInitialDeathSaveRelicHp = if ($ExpectedInitialDeathSaveRelicHp -ge 0) { $ExpectedInitialDeathSaveRelicHp } else { $null }

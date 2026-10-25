@@ -97,7 +97,7 @@ Calculist 分叉保留 `CombatSolver` 命名空间并输出 `CombatSolver.Calcul
 - headless 实例目录、完整游戏/Mod 内容快照和主机资源预约属于 `tools/testing/headless-runtime.ps1/.sh`；默认实例根固定为当前仓库 `.local/headless-instances/<实例>`，不得回到 `%LOCALAPPDATA%` 或 XDG state。用户目录只保留跨任务互斥所需的小型主机租约。启动器保留请求协议、精确 PID/出生身份终止、结果与静稳 ACK。不得把测试协调放入游戏 Search/Runtime，或只删全局进程检查而继续共享 DLL/协议。并行只作正确性/吞吐验证，性能对照使用独占模式。
 - CoverageCatalog 只消费 `IMethodMirrorRegistryDescriptorProvider`，不反射 registry 私有字段。
 - 覆盖材料按 `coverage/README.md` 收纳；CoverageCatalog 从 catalog/evidence 读取登记，按完整路径消费 fixtures，替换 catalog/generated 快照，候选输入生成到 .local。移动目录保持证据等级与语义输入，运行器继续由 tools 持有。
-- Testing 按 `src/Testing/README.md` 的 Host、Support、Replay、Contracts 与 Regressions 收纳；移动保持原 partial 类型与协议。退役调查先检查跨层消费者，提取仍复用的 helper，再删除专用路由。一次性测试在 .local/tool-tasks 显式接入，任务结束清理；只有独立、可复跑的机制合同进入正式源码树。
+- Testing 按 `src/Testing/README.md` 的 Host、Support、Replay、Contracts 与 Regressions 收纳；组件回复界与 Smart 资格合同归 `Contracts/Search`，移动保持原 partial 类型与协议。退役调查先检查跨层消费者，提取仍复用的 helper，再删除专用路由。一次性测试在 .local/tool-tasks 显式接入，任务结束清理；只有独立、可复跑的机制合同进入正式源码树。
 
 ## 3. 实现方式
 

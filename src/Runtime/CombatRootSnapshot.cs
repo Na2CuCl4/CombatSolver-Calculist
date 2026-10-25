@@ -56,7 +56,12 @@ internal sealed class CombatRootSnapshot
     public string HealingBoundCertificationReason { get; }
     public string? HealingBoundCertificationSourceId { get; }
     public bool CanCertifyRemainingHealing { get; }
+    internal bool UsesComponentHealingCertificate { get; }
+    internal string? ComponentHealingRejection { get; }
     public bool UsesKnownNativeHealingPolicy { get; }
+    internal GrowthValues InitialGrowthRewards
+        => ((SimulatedCombatState)_rootSimulator.State.CombatState).GrowthRewards;
+    internal GrowthValues? ExhaustingGrowthUpperBound { get; }
     /// <summary>Root card/power/potion healing bound, excluding fixed post-combat healing.</summary>
     public int InitialRemainingHealingUpperBound { get; }
     public CombatHistoryDependencies HistoryDependencies { get; }
@@ -140,12 +145,18 @@ internal sealed class CombatRootSnapshot
         HasOnlyPostCombatHealing = healingBoundAssessment.IsCertified;
         HealingBoundCertificationReason = healingBoundAssessment.Reason;
         HealingBoundCertificationSourceId = healingBoundAssessment.BlockingSourceId;
-        CanCertifyRemainingHealing = StrategicHpRecoveryBound.CanCertifyRemainingHealingEnvironment(
-            rootSimulator, playerIdentity);
+        ComponentHealingRejection = StrategicHpRecoveryBound.ComponentHealingRejection(rootSimulator, playerIdentity);
+        UsesComponentHealingCertificate = ComponentHealingRejection is null;
+        CanCertifyRemainingHealing = UsesComponentHealingCertificate
+            || StrategicHpRecoveryBound.CanCertifyRemainingHealingEnvironment(rootSimulator, playerIdentity);
         UsesKnownNativeHealingPolicy = StrategicHpRecoveryBound.CanUseKnownNativeHealingPolicy(
             rootSimulator, playerIdentity);
+        ExhaustingGrowthUpperBound = ResourceIncumbentPolicy.CaptureExhaustingGrowthUpperBound(
+            rootSimulator, playerIdentity);
         InitialRemainingHealingUpperBound = CanCertifyRemainingHealing
-            ? StrategicHpRecoveryBound.RemainingHealingUpperBound(rootSimulator, playerIdentity, postCombatHeal: 0)
+            ? UsesComponentHealingCertificate
+                ? StrategicHpRecoveryBound.ComponentHealingUpperBound(rootSimulator, playerIdentity, postCombatHeal: 0)
+                : StrategicHpRecoveryBound.RemainingHealingUpperBound(rootSimulator, playerIdentity, postCombatHeal: 0)
             : int.MaxValue;
         HistoryDependencies = historyDependencies;
         CapturedPowerCount = capturedPowerCount;
@@ -166,7 +177,10 @@ internal sealed class CombatRootSnapshot
         Engine.InCombat.Mirrors.Hooks.TurnEnd.AfterSideTurnEndLateMirrors.Seal();
         Engine.InCombat.Mirrors.Hooks.TurnStart.BeforeSideTurnStartMirrors.Seal();
         Engine.InCombat.Mirrors.Hooks.TurnStart.AfterPlayerTurnStartMirrors.Seal();
+        Engine.InCombat.Mirrors.Hooks.TurnEnd.ExtraTurnMirrors.Seal();
         Stopwatch stopwatch = Stopwatch.StartNew();
+
+        PredictionModPatchAudit.ValidateMonsterModels(state.Enemies.Select(enemy => enemy.Monster).OfType<MonsterModel>());
 
         PowerDynamicVarWarmup.EnsureMaterialized(state);
         CardDynamicVarWarmup.EnsureMaterialized(state);

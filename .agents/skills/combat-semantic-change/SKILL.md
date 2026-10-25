@@ -38,6 +38,8 @@ CombatRootSnapshot.Capture（主线程根）
 
 确定唯一权威结算点后再改代码。不能靠执行顺序抵消双结算。
 
+攻击意图直接从分支当前怪物 AI 行动派生；死亡变形、眩晕和强制行动可在同一玩家回合内替换行动，回合开始的派生缓存不足以支持伤害后条件。准备阶段重搜与普通跨回合使用同一延迟资源消费语义，基础最大能量在根冻结，监听表不读取实机战斗是否结束。回合末自动出牌先于 BeforeSideTurnEndEarly 的手牌消耗，额外回合资格在该阶段结算后判断。
+
 动态目标类型的分支覆盖必须同时定义能力存在和不存在两侧。君王之剑/小刀在分支无群攻能力时不能回退到实机 owner 的原生 TargetType；最小合同交错改变实机能力与独立分支，验证后台目标枚举不读 live。
 
 ## 2. 选择实现层
@@ -68,6 +70,8 @@ CombatRootSnapshot.Capture（主线程根）
 新增或修改 mirror 注册时，由 `MethodMirrorRegistryDescriptor` 自动向 CoverageCatalog 描述支持状态；不要在工具侧复制 registry 私有布局或另建平行登记。
 
 `AfterSideTurnEndLate` 的扩展使用 `AfterSideTurnEndLateMirrors.Register<TModel>`，在根捕获前完成登记；玩家和敌方共用 Hook facade，DisintegrationPower 不得恢复到独立晚期补偿。新增其他阶段时逐一核对原版顺序、选择暂停和状态所有权，不能把晚期入口当作所有回合事件的通用回调。
+
+额外回合的 `ShouldTakeExtraTurn` / `AfterTakingExtraTurn` 由 `ExtraTurnMirrors` 登记原版及第三方单项效果。判断按原生顺序短路，后置回调先固定成员再依次结算；选择暂停沿原动作重放。状态读写使用分支 Power 和遗物记录；原生顺序、完整状态和 Fork 隔离用 `EXTRA-TURN-MIRROR-ORDER` 验证。
 
 ## 3. 状态所有权清单
 

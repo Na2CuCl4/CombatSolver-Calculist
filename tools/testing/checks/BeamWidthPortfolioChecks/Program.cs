@@ -293,6 +293,46 @@ Require(Portfolio([24, 23, 25], 1000,
         [Finished(10, Outcome(true, 30)), Finished(10, Outcome(true, 30)), Finished(10, Outcome(true, 30))]).SelectedIndex == 0,
     "A three-way tie did not keep the baseline member.");
 
+// Optional potion spending competes on HP plus opportunity cost across every member.
+static SolverInterimResult PotionOutcome(int hpDeficit, int cost, int potions, int turn = 7)
+    => Outcome(true, hpDeficit, potions) with
+    {
+        PotionStrategicCost = cost, CombatEndedTurn = turn, Survives = true,
+    };
+foreach (var sample in new[] { (Baseline: 4, Loss: 3, Cost: 18), (Baseline: 12, Loss: 0, Cost: 90) })
+{
+    var free = PotionOutcome(sample.Baseline, 0, 0);
+    var used = PotionOutcome(sample.Loss, sample.Cost, 2);
+    Require(!CombatSearchCoordinator.IsBetterPotionPolicyResult(null, used, free)
+        && CombatSearchCoordinator.IsBetterPotionPolicyResult(null, free, used),
+        $"Low savings {sample.Baseline - sample.Loss}/{sample.Cost} promoted potion spending.");
+    Require(Portfolio([24, 23], 1000, [Finished(10, free), Finished(10, used)]).SelectedIndex == 0,
+        "A supplemental member replaced the potion-free victory with low-value spending.");
+}
+var paid = PotionOutcome(0, 9, 1);
+Require(CombatSearchCoordinator.IsBetterPotionPolicyResult(null, paid, PotionOutcome(12, 0, 0)),
+    "Sufficient potion savings were rejected.");
+Require(CombatSearchCoordinator.IsBetterPotionPolicyResult(null, paid, PotionOutcome(9, 0, 0)),
+    "Savings at the opportunity-cost threshold were rejected.");
+Require(!CombatSearchCoordinator.IsBetterPotionPolicyResult(null,
+    PotionOutcome(4, 9, 1, turn: 1), PotionOutcome(4, 0, 0, turn: 7)),
+    "Earlier victory bypassed the potion cost.");
+Require(CombatSearchCoordinator.IsBetterPotionPolicyResult(null,
+    PotionOutcome(0, 1, 1), PotionOutcome(3, 0, 0)), "Replacement credit lost its value.");
+Require(CombatSearchCoordinator.IsBetterPotionPolicyResult(null,
+    PotionOutcome(0, 0, 1), PotionOutcome(3, 0, 0)), "Forced or free potion use gained an optional cost.");
+Require(CombatSearchCoordinator.IsBetterPotionPolicyResult(null, paid, Outcome(false, 0)),
+    "A necessary potion victory lost to an incomplete route.");
+Require(CombatSearchCoordinator.IsBetterPotionPolicyResult(null,
+    paid, PotionOutcome(0, 0, 0) with { DeathSaveUseCount = 1 }),
+    "Preserving a death-save resource lost priority.");
+Require(CombatSearchCoordinator.IsBetterPotionPolicyResult(SolverTheftPolicy.PreserveResources,
+    paid, PotionOutcome(0, 0, 0) with { OutstandingStolenResource = 1 }),
+    "Recovering stolen resources lost priority.");
+Require(!CombatSearchCoordinator.IsBetterPotionPolicyResult(null,
+    PotionOutcome(0, int.MaxValue, 1), PotionOutcome(4, 0, 0)),
+    "An unbounded boss potion cost overflowed the comparison.");
+
 // The comparator is the only selection authority: an independent scan must agree.
 SolverInterimResult[] scripted =
 [
@@ -343,14 +383,14 @@ checks += 4;
 const long Budget = 60_000;
 BeamWidthPortfolioBaseline Baseline(
     bool exhausted = true, bool provenZeroDamage = false, long elapsed = 5_000,
-    long expanded = 4_000, long allocated = 400_000_000, int width = 24)
-    => new(exhausted, provenZeroDamage, elapsed, expanded, allocated, width);
+    long expanded = 4_000, int width = 24)
+    => new(exhausted, provenZeroDamage, elapsed, expanded, width);
 
 string? Gate(
     BeamWidthPortfolioBaseline baseline, int memberWidth = 96, long remainingNodes = 16_000,
-    long remainingMilliseconds = 55_000, long remainingMemoryBytes = long.MaxValue)
+    long remainingMilliseconds = 55_000)
     => BeamWidthPortfolioGate.RejectRefinement(
-        baseline, memberWidth, remainingNodes, remainingMilliseconds, Budget, remainingMemoryBytes);
+        baseline, memberWidth, remainingNodes, remainingMilliseconds, Budget);
 
 Require(Gate(Baseline()) == null, "A baseline with headroom on every axis was refused.");
 Require(PowerCommitmentPortfolioGate.Reject(
@@ -401,15 +441,6 @@ Require(Gate(Baseline(elapsed: 5_000), memberWidth: 96, remainingMilliseconds: 3
 Require(Gate(Baseline(elapsed: 5_000), memberWidth: 96, remainingMilliseconds: 29_999)
         == BeamWidthPortfolioGate.SkippedTimeHeadroom,
     "A refinement started without enough remaining time for its estimate.");
-
-// Memory headroom uses the same estimate; a disabled signal (long.MaxValue) never blocks.
-Require(Gate(Baseline(allocated: 400_000_000), memberWidth: 96, remainingMemoryBytes: 2_400_000_000) == null,
-    "A refinement that exactly fits the reported memory headroom was refused.");
-Require(Gate(Baseline(allocated: 400_000_000), memberWidth: 96, remainingMemoryBytes: 2_399_999_999)
-        == BeamWidthPortfolioGate.SkippedMemoryHeadroom,
-    "A refinement started without enough reported memory headroom.");
-Require(Gate(Baseline(allocated: long.MaxValue / 1024), remainingMemoryBytes: long.MaxValue) == null,
-    "A disabled memory pressure signal blocked a refinement.");
 
 // The gate plugs into the combinator's rejection hook: rejected members keep their line and spend nothing.
 var gated = Portfolio([24, 96], 20_000,

@@ -98,7 +98,15 @@ internal static partial class CombatSearchCoordinator
         if (policy.IncludeTurnSetup)
             return primary;
         int maximumSmartPotionUses = policy.PotionPolicy == SolverPotionPolicy.Smart
-            ? MaximumSmartPotionUses(root, policy, potionFreeWon: true, primaryDeficit)
+            ? Math.Max(
+                Math.Max(
+                    MaximumSmartPotionUses(root, policy, potionFreeWon: true, primaryDeficit),
+                    // 同梯度入口的理由：净差已扣掉与药水无关的既有治疗，用它否证整层药水搜索会让
+                    // 「零药更好」反而关掉带药解的搜索面；必然受击同理可能为 0。
+                    MaximumSmartPotionUses(root, policy, potionFreeWon: true, primary.UnavoidableHpLost)),
+                // 整场预计战损是这一层真正的判别量：净差与必然受击都可能在更好的零药解上塌到门槛以下，
+                // 而战损仍反映这场仗还有多少血可省。
+                MaximumSmartPotionUses(root, policy, potionFreeWon: true, primary.ProjectedBattleHpLost))
             : Math.Max(1, primary.PotionCount);
         if (HasReachedProvablePrimaryQualityLowerBound(root, policy, primary)
             || policy.PotionPolicy == SolverPotionPolicy.RequireAtLeastOne
@@ -626,9 +634,11 @@ internal static partial class CombatSearchCoordinator
         try
         {
             SolverResult gradient = SearchSmartPotionGradient(
-                context, callerCancellationToken, primary, memoryForecast);
+                context, callerCancellationToken, primary, memoryForecast,
+                out int maximumOptionalPotionUses);
             if (policy.IncludeTurnSetup
                 || gradient.ResultScope != SolverResultScope.SearchCompletion
+                || maximumOptionalPotionUses == 0
                 || policy.PotionStrategy.HasForcedDirectives
                 || battleDamage.PotionsUsedSoFar != 0
                 || CanFinishNativeLouseZeroDamageRoute(root, policy, gradient)
@@ -729,11 +739,62 @@ internal static partial class CombatSearchCoordinator
             int prefixLimit = prefixes.Any(prefix => prefix[0].PotionId == "BLOCK_POTION"
                 || prefix[0].Choice?.Effect == PlanChoiceEffect.SetFreeThisCombat) ? 12 : 8;
             FrontierContinuationScheduler continuationScheduler = new(context);
-            foreach (PlanAction[] prefix in prefixes
-                         .DistinctBy(PowerPrefixKey)
-                         .Take(prefixLimit))
+            List<PlanAction[]> posteriorPrefixes = prefixes.DistinctBy(PowerPrefixKey).Take(prefixLimit).ToList();
+            PlanAction[]? continuationSlot = posteriorPrefixes.LastOrDefault();
+            Dictionary<string, PlanAction[]> openingFrontiers = [];
+            bool selectedBoundaryRefined = false;
+            bool TryOpeningFrontier(PlanAction[] slot, out PlanAction[] frontier)
             {
-                string prefixText = string.Join('+', prefix.Select(action =>
+                frontier = slot;
+                if (!ReferenceEquals(slot, continuationSlot)
+                    || slot.Length != 2 || !primary.OnlyDeathRoutesFound
+                    || IsCompleteVictory(selected)
+                    || slot[1].Kind != PlanActionKind.PlayCard
+                    || !PowerCardValuationModels.Registry.ContainsCardId(slot[1].CardId)
+                    || !openingFrontiers.TryGetValue(PowerPrefixKey([slot[0]]), out PlanAction[]? cached)
+                    || !cached.Any(action => action.Kind == PlanActionKind.PlayCard
+                        && action.CardId == slot[1].CardId))
+                    return false;
+                frontier = cached;
+                return true;
+            }
+            for (int prefixIndex = 0; prefixIndex < posteriorPrefixes.Count; prefixIndex++)
+            {
+                SearchBudgetWindow posteriorWindow = context.Budget.RequestWindow(profile);
+                if (!posteriorWindow.CanStart(0)) break;
+                int continuationIndex = continuationSlot == null ? -1 : posteriorPrefixes.IndexOf(continuationSlot);
+                if (continuationIndex > prefixIndex && posteriorPrefixes[prefixIndex].Length > 1
+                    && TryOpeningFrontier(continuationSlot!, out _))
+                {
+                    posteriorPrefixes.RemoveAt(continuationIndex);
+                    posteriorPrefixes.Insert(prefixIndex, continuationSlot!);
+                }
+                PlanAction[] prefix = posteriorPrefixes[prefixIndex];
+                bool continueOpeningFrontier = TryOpeningFrontier(prefix, out PlanAction[] continuationPrefix);
+                bool continueSelectedBoundary = false;
+                if (!continueOpeningFrontier && !selectedBoundaryRefined
+                    && prefix.Length > 1 && primary.OnlyDeathRoutesFound
+                    && IsCompleteVictory(selected) && !selected.Snapshot.HasRisk
+                    && selected.ProjectedBattleHpLost > 0 && selected.ExplicitPotionCount <= 2)
+                {
+                    int completedTurns = selected.HpLostByTurn
+                        .Where(outcome => outcome.Value > 0 && outcome.Key > root.StartTurnNumber)
+                        .OrderByDescending(outcome => outcome.Key)
+                        .Select(outcome => outcome.Key - root.StartTurnNumber).FirstOrDefault();
+                    PlanAction[] boundary = selected.BestNode.Actions
+                        .TakeWhile(action => action.Turn < root.StartTurnNumber + completedTurns).ToArray();
+                    if (completedTurns > 0 && boundary.LastOrDefault()?.Kind == PlanActionKind.EndTurn
+                        && boundary.Last().Turn == root.StartTurnNumber + completedTurns - 1
+                        && boundary.Any(action => action.Kind == PlanActionKind.PlayCard
+                            && PowerCardValuationModels.Registry.ContainsCardId(action.CardId)))
+                    {
+                        continuationPrefix = boundary;
+                        // Spend one existing cold member at the last observed HP-loss boundary.
+                        selectedBoundaryRefined = true;
+                        continueSelectedBoundary = true;
+                    }
+                }
+                string prefixText = string.Join('+', continuationPrefix.Select(action =>
                     action.Kind == PlanActionKind.UsePotion
                         ? $"POTION:{action.PotionId}@{action.PotionSlot}" +
                           (action.Choice?.Cards.FirstOrDefault() is { } chosen
@@ -751,20 +812,53 @@ internal static partial class CombatSearchCoordinator
                                 profile.BeamWidth, BeamWidthPortfolio.WideRefinementRatio),
                     }
                     : profile;
+                routeProfile = posteriorWindow.Limit(routeProfile,
+                    routeProfile.MaxExpandedNodes, routeProfile.SoftTimeBudgetMilliseconds,
+                    reserveMilliseconds: 0);
+                if (continueOpeningFrontier || continueSelectedBoundary)
+                    routeProfile = routeProfile with { BaseScoreOnly = false };
+                if (continueSelectedBoundary)
+                {
+                    int remainingSlots = posteriorPrefixes.Count - prefixIndex;
+                    routeProfile = posteriorWindow.Limit(routeProfile,
+                        Math.Max(1, (int)(posteriorWindow.RemainingNodes / (remainingSlots + 1))),
+                        Math.Max(1, posteriorWindow.RemainingMilliseconds / (remainingSlots + 1)),
+                        reserveMilliseconds: 0);
+                }
+                PlanAction[]? openingPreviewActions = null;
                 SolverResult? candidate = continuationScheduler.DispatchOptional(
                     new ContinuationSearchRequest(context,
                         ContinuationPurpose.SmartOpeningPotionPosterior,
-                        prefix, routeProfile, SolverPotionPolicy.RequireAtLeastOne,
-                        prefix[0].PotionId == "BLOCK_POTION"
-                            ? Math.Min(2, MaximumSmartPotionUses(root, policy,
-                                potionFreeWon: false, potionFreeHpDeficit: 0))
-                            : 1, null)
-                    { ResetFixedPrefixSchedulingBaseline = false },
+                        continuationPrefix, routeProfile, SolverPotionPolicy.RequireAtLeastOne,
+                        continueOpeningFrontier || continueSelectedBoundary || prefix[0].PotionId == "BLOCK_POTION"
+                            ? Math.Min(2, maximumOptionalPotionUses)
+                            : 1, CombatBeamSolver.CanUseComponentSmartPotionEligibility(root, policy) ? 1 : null)
+                    {
+                        ResetFixedPrefixSchedulingBaseline = continueOpeningFrontier || continueSelectedBoundary,
+                        PotionFreePolicyBaseline = CombatBeamSolver.CanUseComponentSmartPotionEligibility(root, policy)
+                            && IsCompleteVictory(primary) && !primary.Snapshot.HasRisk
+                            && primary.ExplicitPotionCount == 0
+                            && primary.Snapshot.ProjectedDeathSaveUseCount == 0
+                                ? new(true, StrategicHpDeficit(root, policy, primary),
+                                    primary.Snapshot.PlayerHp, primary.CombatEndedTurn)
+                                : null,
+                        ProgressCallbackOverride = progress =>
+                        {
+                            if (prefix.Length == 1 && progress.CurrentTurnPreview is { } preview)
+                                openingPreviewActions = preview.Actions.ToArray();
+                            progressCallback?.Invoke(progress);
+                        },
+                    },
                     $"SMART_OPENING_POTION_POSTERIOR prefix={prefixText}");
                 if (candidate == null)
                     continue;
                 if (candidate.ResultScope != SolverResultScope.SearchCompletion)
                     return candidate;
+                if (prefix.Length == 1 && !candidate.Snapshot.HasRisk
+                    && openingPreviewActions is { } opening
+                    && opening.LastOrDefault()?.Kind == PlanActionKind.EndTurn
+                    && opening.Count(action => action.Kind == PlanActionKind.UsePotion) == 1)
+                    openingFrontiers[PowerPrefixKey(prefix)] = opening;
                 PopulateSingleSessionTotals(candidate);
                 bool won = IsCompleteVictory(candidate);
                 int saved = IsCompleteVictory(primary)
@@ -814,26 +908,14 @@ internal static partial class CombatSearchCoordinator
         SearchPolicySnapshot policy,
         SolverResult candidate,
         SolverResult current)
-    {
-        if (!IsCompleteVictory(candidate) || !IsCompleteVictory(current)
-            || candidate.Snapshot.StrategyGoalHpCredit != current.Snapshot.StrategyGoalHpCredit
-            || policy.TheftPolicy == SolverTheftPolicy.PreserveResources)
-            return IsBetterCompletedResult(root, policy, candidate, current);
-
-        int candidateCost = StrategicHpDeficit(root, policy, candidate)
-            + SmartPotionHpRequired(root, policy, candidate);
-        int currentCost = StrategicHpDeficit(root, policy, current)
-            + SmartPotionHpRequired(root, policy, current);
-        return candidateCost != currentCost
-            ? candidateCost < currentCost
-            : IsBetterCompletedResult(root, policy, candidate, current);
-    }
+        => IsBetterPotionPolicyResult(root, policy, candidate, current);
 
     private static SolverResult SearchSmartPotionGradient(
         SearchPassContext context,
         CancellationToken callerCancellationToken,
         SolverResult potionFree,
-        SmartLayerMemoryForecast memoryForecast)
+        SmartLayerMemoryForecast memoryForecast,
+        out int maximumOptionalPotionUses)
     {
         CombatRootSnapshot root = context.Root;
         SolverDisplayNames displayNames = context.DisplayNames;
@@ -851,11 +933,32 @@ internal static partial class CombatSearchCoordinator
             && !potionFree.Snapshot.PlayerDead
             && potionFree.Snapshot.ProjectedPlayerHp > 0;
         int potionFreeDeficit = StrategicHpDeficit(root, policy, potionFree);
-        int maximumOptionalPotionUses = MaximumSmartPotionUses(
+        maximumOptionalPotionUses = MaximumSmartPotionUses(
             root,
             policy,
             potionFreeWon,
             potionFreeDeficit);
+        // 净差会把与药水无关的既有治疗一并扣掉，于是零药路线越优越容易否证整个药水层；
+        // 而门槛要比较的是「这场仗还有多少血可省」。取三轴中更宽的一份配额：净差、
+        // 必然受击、以及整场预计战损（ProjectedBattleHpLost）。最后一条是必要的——当更好的
+        // 零药解把净差压到门槛以下时，若只看净差就会跳过整层药水搜索，反而漏掉存在更优带药
+        // 路线的解（实测：净差 6 < 门槛 9 ⇒ 不搜 ⇒ 12 战损，而该层内存在 0 战损解）。
+        // 只放宽「跑不跑药水层」，不改动任何预算，也不改变结果之间的比较规则。
+        if (policy.PotionPolicy == SolverPotionPolicy.Smart)
+        {
+            int widenedCapacity = Math.Max(
+                MaximumSmartPotionUses(root, policy, potionFreeWon, potionFree.UnavoidableHpLost),
+                MaximumSmartPotionUses(root, policy, potionFreeWon, potionFree.ProjectedBattleHpLost));
+            if (widenedCapacity > maximumOptionalPotionUses)
+            {
+                policy.Diagnostics.Info(
+                    $"[CombatSolver/Test] SMART_POTION_GRADIENT axis_widened " +
+                    $"hp_deficit={potionFreeDeficit} unavoidable_hp_lost={potionFree.UnavoidableHpLost} " +
+                    $"projected_battle_hp_lost={potionFree.ProjectedBattleHpLost} " +
+                    $"maximum_from_deficit={maximumOptionalPotionUses} maximum_from_widened={widenedCapacity}");
+                maximumOptionalPotionUses = widenedCapacity;
+            }
+        }
         if (maximumOptionalPotionUses == 0)
         {
             policy.Diagnostics.Info(
@@ -966,12 +1069,15 @@ internal static partial class CombatSearchCoordinator
             int hpRequired = SmartPotionHpRequired(root, policy, candidate);
             bool protectsLoot = policy.TheftPolicy == SolverTheftPolicy.PreserveResources
                 && candidate.OutstandingStolenResource < potionFree.OutstandingStolenResource;
+            bool protectsDeathSave = candidate.Snapshot.ProjectedDeathSaveUseCount
+                < potionFree.Snapshot.ProjectedDeathSaveUseCount;
             bool acceptable = IsSmartPotionGradientCandidateAcceptable(
                 potionFreeWon,
                 candidateWon,
                 hpSaved,
                 hpRequired,
-                protectsLoot);
+                protectsLoot,
+                protectsDeathSave);
             bool improvesSelection = acceptable
                 && IsBetterPotionPolicyResult(root, policy, candidate, selected);
             if (improvesSelection)
@@ -1016,9 +1122,10 @@ internal static partial class CombatSearchCoordinator
         bool candidateWon,
         int hpSaved,
         int hpRequired,
-        bool protectsLoot)
+        bool protectsLoot,
+        bool protectsDeathSave = false)
         => candidateWon
-            && (!potionFreeWon || hpSaved >= hpRequired || protectsLoot);
+            && (!potionFreeWon || hpSaved >= hpRequired || protectsLoot || protectsDeathSave);
 
     private static void ObserveSmartLayerMemory(
         SearchPassContext context,
@@ -1116,7 +1223,7 @@ internal static partial class CombatSearchCoordinator
             // Retain that completed work in request totals even when cancellation then unwinds.
             stopwatch.Stop();
             TimeSpan gcPause = GC.GetTotalPauseDuration() - pauseBefore;
-            TimeSpan maxObservedGcPause = signal.LastReclaimMaxObservedGcPause;
+            TimeSpan? maxObservedGcPause = signal.LastReclaimMaxObservedGcPause;
             long allocatedBytes = Math.Max(
                 0,
                 GC.GetAllocatedBytesForCurrentThread() - allocatedBefore);
@@ -1130,8 +1237,8 @@ internal static partial class CombatSearchCoordinator
             totalsCarrier.TotalGen1Collections += gen1Collections;
             totalsCarrier.TotalGen2Collections += gen2Collections;
             totalsCarrier.TotalGcPauseDuration += gcPause;
-            if (maxObservedGcPause > totalsCarrier.TotalMaxObservedGcPause)
-                totalsCarrier.TotalMaxObservedGcPause = maxObservedGcPause;
+            if (maxObservedGcPause is { } observedPause && observedPause > totalsCarrier.TotalMaxObservedGcPause)
+                totalsCarrier.TotalMaxObservedGcPause = observedPause;
             totalsCarrier.TotalSearchElapsed += stopwatch.Elapsed;
             context.Budget.WorkTotals.RecordCoordinatorOverhead(
                 stopwatch.Elapsed,
@@ -1148,7 +1255,7 @@ internal static partial class CombatSearchCoordinator
                 $"allocated_before={pressureBefore} limit_before={limitBefore} " +
                 $"allocated_after={signal.AllocatedBytes} limit_after={signal.AllocationLimitBytes} " +
                 $"gc_pause_ms={gcPause.TotalMilliseconds:F1} " +
-                $"max_observed_gc_pause_ms={maxObservedGcPause.TotalMilliseconds:F1} " +
+                $"max_observed_gc_pause_ms={maxObservedGcPause?.TotalMilliseconds.ToString("F1") ?? "unavailable"} " +
                 signal.CaptureGcLifecycle().DeltaFrom(lifecycleBefore).ToDiagnosticString() + " " +
                 $"elapsed_ms={stopwatch.Elapsed.TotalMilliseconds:F1} " +
                 $"canceled={cancellationToken.IsCancellationRequested.ToString().ToLowerInvariant()}");
