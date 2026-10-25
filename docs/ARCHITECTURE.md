@@ -78,6 +78,8 @@ Smart 药水梯度在主成员耗尽时间时拥有一个独立成员时间：�
 
 `src/Prediction/CustomCombatStateMirrors.cs` 持有隔离宿主的根捕获、分支 Fork、观察绑定、状态键与 continuation 契约；`CustomPowerExtensions.cs` 持有 Power 创建/别名/数量/移除和生命周期派发。Calculist 的具体规则由 `CalculistDesigner/simulation/runtime/calculist_adapter/` 的隔离宿主适配登记，分叉只提供唯一执行边界，不依赖 Calculist 产品程序集。`Native` 通过 friend assembly 使用内部入口，不启动 Mod UI。自定义状态存在时关闭上游执行前缀续接特化，保留完整回放与稳定 Fork 断言。
 
+隔离 Native 宿主的展示 transpiler 由 internal `PredictionModPatchAudit.RegisterIsolatedPresentationTranspiler` 登记，仅允许已安装且完成 IL 核对的单个精确目标、补丁方法及完整 Harmony 元数据，首次 `CaptureCardOnPlay` 后封闭；该入口不属于外部第三方 API，未知补丁仍明确拒绝。
+
 自定义逐牌语义键同时用于候选选择、牌匹配、搜索状态键和 continuation；不能用同名同升级卡代替隐藏字段不同的实例。阵营切换时冻结 continuation 的当前侧历史窗口，效果自身的玩家回合计数保持独立。严格模式在 Unsupported/Inferred 派发和最终 gap 收集处拒绝未补偿语义，不能把红色风险提示当作可执行路线。
 
 | 位置 | 职责 |

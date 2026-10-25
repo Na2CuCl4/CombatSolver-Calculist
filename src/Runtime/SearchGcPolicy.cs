@@ -1837,18 +1837,29 @@ internal static partial class SearchGcPolicy
         long fullBlockingIndexBefore,
         long backgroundIndex,
         long fullBlockingIndex,
-        bool sentinelAlive)
+        bool sentinelAlive,
+        bool compactSmallObjectHeap = false,
+        bool fullBlockingCompacted = false)
     {
         bool backgroundAdvanced = backgroundIndex > backgroundIndexBefore;
         bool fullBlockingAdvanced = fullBlockingIndex > fullBlockingIndexBefore;
+        // A later background collection cannot invalidate the compacting full
+        // collection already completed after this reference-release boundary.
+        if (compactSmallObjectHeap && fullBlockingAdvanced && fullBlockingCompacted
+            && !sentinelAlive)
+            return BackgroundCollectionObservation.CompletedFullBlocking;
         if (backgroundAdvanced && (!fullBlockingAdvanced || backgroundIndex > fullBlockingIndex))
             return sentinelAlive
                 ? BackgroundCollectionObservation.RequestFreshCollection
-                : BackgroundCollectionObservation.CompletedBackground;
+                : compactSmallObjectHeap
+                    ? BackgroundCollectionObservation.Waiting
+                    : BackgroundCollectionObservation.CompletedBackground;
         if (fullBlockingAdvanced)
             return sentinelAlive
                 ? BackgroundCollectionObservation.RequestFreshCollection
-                : BackgroundCollectionObservation.CompletedFullBlocking;
+                : compactSmallObjectHeap && !fullBlockingCompacted
+                    ? BackgroundCollectionObservation.Waiting
+                    : BackgroundCollectionObservation.CompletedFullBlocking;
         return BackgroundCollectionObservation.Waiting;
     }
 
@@ -1884,18 +1895,18 @@ internal static partial class SearchGcPolicy
                     fullBlockingIndexBefore,
                     background.Index,
                     fullBlocking.Index,
-                    completionSentinel.IsAlive);
+                    completionSentinel.IsAlive,
+                    compactSmallObjectHeap,
+                    fullBlocking.Compacted);
                 if (!timeoutForTesting)
                 {
-                    if (!compactSmallObjectHeap
-                        && observation == BackgroundCollectionObservation.CompletedBackground)
+                    if (observation == BackgroundCollectionObservation.CompletedBackground)
                     {
                         confirmedOrDrained = true;
                         return new BackgroundGen2Completion(
                             "background", background.Index, requests, background.Concurrent);
                     }
-                    if (observation == BackgroundCollectionObservation.CompletedFullBlocking
-                        && (!compactSmallObjectHeap || fullBlocking.Compacted))
+                    if (observation == BackgroundCollectionObservation.CompletedFullBlocking)
                     {
                         confirmedOrDrained = true;
                         return new BackgroundGen2Completion(

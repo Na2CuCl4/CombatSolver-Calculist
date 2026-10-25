@@ -6,6 +6,46 @@ internal static class GcPolicyChecks
 
     public static void Run()
     {
+        PolicyCheck.Run("NoGC restart retains compacting completion behind a newer background GC", () =>
+        {
+            PolicyCheck.Require(SearchGcPolicy.ObserveBackgroundCollection(
+                99, 100, 102, 101, sentinelAlive: false,
+                compactSmallObjectHeap: true, fullBlockingCompacted: true)
+                == SearchGcPolicy.BackgroundCollectionObservation.CompletedFullBlocking,
+                "A newer background GC must not hide a completed compacting full GC after reference release.");
+        });
+        PolicyCheck.Run("NoGC restart rejects stale uncompacted or still-live completion evidence", () =>
+        {
+            foreach (var evidence in new[]
+            {
+                (FullIndex: 100L, Compacted: true, SentinelAlive: false),
+                (FullIndex: 101L, Compacted: false, SentinelAlive: false),
+                (FullIndex: 101L, Compacted: true, SentinelAlive: true),
+            })
+                PolicyCheck.Require(SearchGcPolicy.ObserveBackgroundCollection(
+                    99, 100, 102, evidence.FullIndex, evidence.SentinelAlive,
+                    compactSmallObjectHeap: true, fullBlockingCompacted: evidence.Compacted)
+                    != SearchGcPolicy.BackgroundCollectionObservation.CompletedFullBlocking,
+                    "Restart requires a newer compacted full collection and a released sentinel.");
+        });
+        PolicyCheck.Run("ordinary GC retains latest-kind completion and fresh-collection decisions", () =>
+        {
+            foreach (bool compacted in new[] { false, true })
+            {
+                PolicyCheck.Require(SearchGcPolicy.ObserveBackgroundCollection(
+                    99, 100, 102, 101, false, fullBlockingCompacted: compacted)
+                    == SearchGcPolicy.BackgroundCollectionObservation.CompletedBackground,
+                    "Ordinary GC must retain the latest background completion.");
+                PolicyCheck.Require(SearchGcPolicy.ObserveBackgroundCollection(
+                    99, 100, 101, 102, false, fullBlockingCompacted: compacted)
+                    == SearchGcPolicy.BackgroundCollectionObservation.CompletedFullBlocking,
+                    "Ordinary GC does not require compaction.");
+                PolicyCheck.Require(SearchGcPolicy.ObserveBackgroundCollection(
+                    99, 100, 102, 101, true, fullBlockingCompacted: compacted)
+                    == SearchGcPolicy.BackgroundCollectionObservation.RequestFreshCollection,
+                    "A surviving sentinel must request a fresh collection.");
+            }
+        });
         PolicyCheck.Run("cold layer uses real wave admission", () =>
         {
             SmartLayerMemoryDecision decision = new SmartLayerMemoryForecast().Decide(

@@ -6,6 +6,8 @@ using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.GameActions.Multiplayer;
 using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Models;
+using MegaCrit.Sts2.Core.Nodes;
+using MegaCrit.Sts2.Core.TestSupport;
 
 namespace CombatSolver;
 
@@ -27,6 +29,66 @@ internal static class PredictionModPatchAudit
     private const string MonsterMachineMethodName = "GenerateMoveStateMachine";
     private static readonly object AdaptedMonsterMachineLock = new();
     private static readonly HashSet<(Type Monster, string ModId)> AdaptedMonsterMachines = [];
+    private static readonly object IsolatedPresentationLock = new();
+    private static readonly Dictionary<(MethodInfo Target, MethodInfo Transpiler), IsolatedPresentationPatch>
+        IsolatedPresentationTranspilers = [];
+    private static bool _isolatedPresentationSealed;
+
+    private sealed record IsolatedPresentationPatch(string Owner, int Index, int Priority,
+        string[] Before, string[] After, bool Debug)
+    {
+        internal bool Matches(Patch patch)
+            => patch.owner == Owner && patch.index == Index && patch.priority == Priority
+                && patch.debug == Debug && patch.innerMethod is null
+                && patch.before.SequenceEqual(Before) && patch.after.SequenceEqual(After);
+    }
+
+    /// <summary>
+    /// The isolated Native friend host may register one already installed, IL-reviewed presentation
+    /// transpiler. This does not adapt gameplay or trust other patches from the same host or owner.
+    /// </summary>
+    internal static void RegisterIsolatedPresentationTranspiler(
+        MethodInfo target, MethodInfo transpiler, string owner)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentNullException.ThrowIfNull(transpiler);
+        ArgumentException.ThrowIfNullOrWhiteSpace(owner);
+        if (!TestMode.IsOn || Thread.CurrentThread.IsThreadPoolThread || !NGame.IsMainThread())
+            throw new InvalidOperationException("Isolated presentation registration requires the TestMode main thread.");
+        Type? machine = target.DeclaringType;
+        Type? cardType = machine?.DeclaringType;
+        MethodInfo? onPlay = cardType is null ? null : AdaptedCardOnPlayMirrors.ResolveOnPlay(cardType);
+        if (cardType is null || cardType.Assembly != typeof(CardModel).Assembly
+            || !typeof(CardModel).IsAssignableFrom(cardType) || cardType.IsAbstract
+            || onPlay?.GetCustomAttribute<AsyncStateMachineAttribute>()?.StateMachineType != machine
+            || target != AccessTools.DeclaredMethod(machine, "MoveNext")
+            || target.IsStatic || target.ReturnType != typeof(void) || target.GetParameters().Length != 0)
+            throw new ArgumentException("Presentation target must be an exact native card OnPlay async MoveNext.", nameof(target));
+        if (!transpiler.IsStatic || transpiler.DeclaringType?.Assembly.GetName().Name != "Native"
+            || transpiler.ReturnType != typeof(IEnumerable<CodeInstruction>))
+            throw new ArgumentException("Presentation transpiler must be the reviewed static Native host method.", nameof(transpiler));
+        lock (IsolatedPresentationLock)
+        {
+            if (_isolatedPresentationSealed)
+                throw new InvalidOperationException("Isolated presentation registration is closed after first root capture.");
+            Patch[] installed = Harmony.GetPatchInfo(target)?.Transpilers
+                .Where(patch => patch.PatchMethod == transpiler && patch.owner == owner).ToArray() ?? [];
+            if (installed.Length != 1 || installed[0].innerMethod is not null)
+                throw new ArgumentException("The exact presentation transpiler must already be installed once.", nameof(transpiler));
+            Patch patch = installed[0];
+            if (!IsolatedPresentationTranspilers.TryAdd((target, transpiler), new(
+                    patch.owner, patch.index, patch.priority, [.. patch.before], [.. patch.after], patch.debug)))
+                throw new InvalidOperationException("Isolated presentation transpiler is already registered.");
+        }
+    }
+
+    private static bool IsRegisteredIsolatedPresentationTranspiler(MethodInfo target, Patch patch)
+    {
+        if (!TestMode.IsOn) return false;
+        lock (IsolatedPresentationLock)
+            return IsolatedPresentationTranspilers.TryGetValue((target, patch.PatchMethod), out var registered)
+                && registered.Matches(patch);
+    }
 
     /// <summary>
     /// 第三方适配层声明：<paramref name="modId"/> 对原版怪物 <paramref name="monsterType"/> 的
@@ -86,6 +148,7 @@ internal static class PredictionModPatchAudit
 
     internal static AdaptedOnPlaySnapshot? CaptureCardOnPlay(IEnumerable<CardModel> cards)
     {
+        lock (IsolatedPresentationLock) _isolatedPresentationSealed = true;
         bool adapted = AdaptedCardOnPlayMirrors.Seal();
         Dictionary<Type, AdaptedCardOnPlayMirrors.Registration?>? selections = adapted ? [] : null;
         HashSet<Type> checkedTypes = [];
@@ -156,6 +219,8 @@ internal static class PredictionModPatchAudit
                 foreach (var group in AdaptedCardOnPlayMirrors.Groups(asyncPatches))
                     foreach (Patch patch in group.Patches)
                     {
+                        if (group.Kind == HarmonyPatchType.Transpiler
+                            && IsRegisteredIsolatedPresentationTranspiler(moveNext, patch)) continue;
                         if (TryDescribeForeignPatch(patch, moveNext) is not { } foreign) continue;
                         throw new IncompatibleGameplayModException(foreign.ModId, foreign.ModName, foreign.Description, "combat");
                     }

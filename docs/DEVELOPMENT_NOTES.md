@@ -24,6 +24,8 @@
 
 ## 下一版本（开发中）
 
+2026-10-25：同步上游 `5c773caaec742bc55588bc9ee21c361326a732f0`，包含 0.50.1 及后续 PR #227、#229、#230 未发布改动；保留 Calculist 权威 Hook 活动状态与死亡屏障。GC 完成索引增加防遮蔽修正，基础／准入 29 项已通过，真实 checkpoint 因初次 NoGC 区域未建成而未覆盖修复路径。适配器新增 26 类 canonical Power 的显式预热登记；隔离 Native 宿主按精确目标、补丁与 Harmony 元数据登记内部展示 transpiler，并调整 Bridge 时序。原 canonical Power／FlashOfSteel 审计失败保留，修正后的新冻结批次通过表达式两动作完整差分、根／Fork 隔离及 18 项 Native 边界；原批次的四项单效果、negative 和 RNG 成功仍按原源码单独记账。结果与局限见[测试入口](TEST_MATRIX.md#2026-10-25-上游同步与-gc-完成索引)。
+
 2026-10-07：修复开局计划发现预查第三方卡牌时过早构造执行期选择规格。登记提供可选潜在效果元数据，缺省保持未知；root、手牌与抽牌堆分类读取元数据，Calculist 的选择牌明确声明 ModDefined。真实出牌规格和缺历史／生成选项的严格拒绝保持。独立回归复用 Designer 的选择差分夹具和原失败战斗输入；验证范围见 `TEST_MATRIX.md`，不改玩法数值或自然局原始结果。
 
 2026-10-05：修复卡牌隐式全选产生虚构页面计划的问题。`ResolveActionCardChoice` 对已声明的确定全选立即调用原有 `CardChoiceSupport.Apply`；条件卡牌登记允许返回 nullable spec，Calculist 三段论未达到两次先前技能时不再产生空选择。显式页面和计划游标的额外选择拒绝保持。失败的自然战斗与零/单候选原生夹具保留在 Designer 独立批次，修复验证入口见 `TEST_MATRIX.md`；不修改产品玩法数值、RNG 或比较字段。
