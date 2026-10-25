@@ -53,6 +53,7 @@ internal static class AfterDeathMirrors
         registry.Register<CrabRagePower>(HandleCrabRage);
         registry.Register<DampenPower>(HandleDampen);
         registry.Register<SteamEruptionPower>(HandleSteamEruption);
+        registry.Register<ReattachPower>(HandleReattach);
 
         return registry;
     }
@@ -63,6 +64,14 @@ internal static class AfterDeathMirrors
         if (context.CombatState is not SimulatedCombatState combat)
             throw new InvalidOperationException("Steam Eruption death requires captured monster phase state.");
         combat.TryTriggerSteamEruptionDeath(context.Simulator, context.Creature);
+    }
+
+    private static void HandleReattach(ReattachPower power, AfterDeathMirrorContext context)
+    {
+        if (context.WasRemovalPrevented || context.Creature != power.Owner) return;
+        if (context.CombatState is not SimulatedCombatState combat)
+            throw new InvalidOperationException("Reattach death requires captured monster phase state.");
+        combat.ApplyReattachDeathMove(context.Simulator, context.Creature);
     }
 
     private static void HandleDampen(DampenPower power, AfterDeathMirrorContext context)

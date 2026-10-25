@@ -184,7 +184,11 @@ internal sealed partial class CombatBeamSolver
         PlanAction finalAction,
         SimulationSnapshot finalSnapshot)
     {
-        bool forcedTurnEnd = finalSnapshot.Turn > node.Turn;
+        bool advancedTurn = finalSnapshot.Turn > node.Turn;
+        var parentCombat = (SimulatedCombatState)node.Snapshot.Simulator.State.CombatState;
+        var finalCombat = (SimulatedCombatState)finalSnapshot.Simulator.State.CombatState;
+        bool forcedTurnEnd = advancedTurn
+            || finalCombat.StartedPlayerTurnEndRequests > parentCombat.StartedPlayerTurnEndRequests;
         PlanAction nodeAction = finalAction with { EndsPlayerTurn = forcedTurnEnd };
         bool terminal = finalSnapshot.PlayerDead
             || finalSnapshot.AllEnemiesDead
@@ -195,7 +199,7 @@ internal sealed partial class CombatBeamSolver
             node.ActionCount + 1,
             finalSnapshot.PotionUseCount,
             finalSnapshot.PotionStrategicCost,
-            forcedTurnEnd ? node.Turn + 1 : node.Turn,
+            finalSnapshot.Turn,
             node.Traits,
             node.FutureSoldHp,
             score,
@@ -251,15 +255,19 @@ internal sealed partial class CombatBeamSolver
         PlanAction finalAction,
         SimulationSnapshot finalSnapshot)
     {
+        var parentCombat = (SimulatedCombatState)node.Snapshot.Simulator.State.CombatState;
+        var finalCombat = (SimulatedCombatState)finalSnapshot.Simulator.State.CombatState;
+        bool forcedTurnEnd = finalSnapshot.Turn > node.Turn
+            || finalCombat.StartedPlayerTurnEndRequests > parentCombat.StartedPlayerTurnEndRequests;
         bool terminal = finalSnapshot.PlayerDead
             || finalSnapshot.AllEnemiesDead
             || finalSnapshot.BoundaryReason != SearchBoundaryReason.None;
         SearchNode child = new(
-            finalAction,
+            finalAction with { EndsPlayerTurn = forcedTurnEnd },
             node.ActionCount + 1,
             finalSnapshot.PotionUseCount,
             finalSnapshot.PotionStrategicCost,
-            node.Turn,
+            finalSnapshot.Turn,
             ClassifyPotionTraits(node.Traits, node.Snapshot, finalSnapshot),
             node.FutureSoldHp,
             ApplySoldHpPenalty(finalSnapshot.Score, node.FutureSoldHp),
@@ -269,7 +277,7 @@ internal sealed partial class CombatBeamSolver
             terminal,
             node,
             finalSnapshot,
-            node.CombatProgress)
+            forcedTurnEnd ? node.CombatProgress.Advance(finalSnapshot) : node.CombatProgress)
         {
             CumulativeEnemyHpLost = AccumulateEnemyHpLost(node, finalSnapshot),
         };

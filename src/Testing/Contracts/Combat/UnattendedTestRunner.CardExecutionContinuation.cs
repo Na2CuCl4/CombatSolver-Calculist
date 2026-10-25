@@ -12,6 +12,7 @@ internal sealed partial class UnattendedTestRunner
 {
     private async Task RunCardExecutionContinuationContractAsync(CombatState live, Player player, IReadOnlyList<string> fixtures)
     {
+        using CardResolvedCallbackObservation callbacks = new();
         foreach (string fixture in fixtures)
         {
             foreach (var relic in player.Relics.ToArray()) await RelicCmd.Remove(relic);
@@ -61,6 +62,8 @@ internal sealed partial class UnattendedTestRunner
                     if (!sim.HasPendingChoice) CombatBeamSolver.SettleReplayActionBoundary(sim, combat);
                 }
                 finally { combat.EndActionChoices(); if (capture) sim.EndExecutionContinuationCapture(); }
+                callbacks.AssertExact(sim, sim.History.OfType<CombatPredictionCardPlayFinishedEntry>()
+                    .Select(entry => entry.CardPlay));
                 return sim;
             }
             string parentBefore = Stamp(parent), liveBefore = ContinuationStamp.CaptureLive(live).StateText;
@@ -92,6 +95,9 @@ internal sealed partial class UnattendedTestRunner
                     using var isolation = SimulationNotificationIsolation.Enter();
                     CombatPredictionSimulator sim; PredictionExecutionContinuation copied;
                     lock (seed) sim = seed.ForkExecutionContinuation(continuation, out copied);
+                    HashSet<MegaCrit.Sts2.Core.Entities.Cards.CardPlay> inheritedCompleted = new(
+                        sim.History.OfType<CombatPredictionCardPlayFinishedEntry>().Select(entry => entry.CardPlay),
+                        ReferenceEqualityComparer.Instance);
                     var combat = (SimulatedCombatState)sim.State.CombatState;
                     combat.BeginActionChoices([choices[index]]);
                     try
@@ -100,6 +106,8 @@ internal sealed partial class UnattendedTestRunner
                         if (!sim.HasPendingChoice) CombatBeamSolver.SettleReplayActionBoundary(sim, combat);
                     }
                     finally { combat.EndActionChoices(); }
+                    callbacks.AssertExact(sim, sim.History.OfType<CombatPredictionCardPlayFinishedEntry>()
+                        .Select(entry => entry.CardPlay).Where(play => !inheritedCompleted.Contains(play)));
                     return sim;
                 }
                 string[] expected = choices.Select(choice => Stamp(Replay([.. prefix, choice]))).ToArray();

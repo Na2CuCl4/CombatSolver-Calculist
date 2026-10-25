@@ -107,8 +107,7 @@ internal sealed partial class UnattendedTestRunner
         // Establish native private isReviving through real damage/AfterDeath,
         // then let a natural enemy turn perform DEAD_MOVE. No HP=0 injection,
         // move-log rewriting, or private revival-state mutation is used.
-        await KillMercuryFixtureSegmentAsync(segments[1], player);
-        await KillMercuryFixtureSegmentAsync(segments[2], player);
+        await RunReattachDeathHitsDifferentialAsync(combat, player, [segments[1], segments[2]], "TwoHits");
         AssertMercuryNativeReviving(segments[1], "DEAD_MOVE");
         AssertMercuryNativeReviving(segments[2], "DEAD_MOVE");
         await AdvanceMercuryActualTurnAsync(combat, player, expectVictory: false);
@@ -141,7 +140,7 @@ internal sealed partial class UnattendedTestRunner
             // In the same live encounter, make a second legal DEAD_MOVE boundary.
             // The previously killed front and newly killed middle must wait this
             // enemy turn; killing the remaining 1-HP back at next player start wins.
-            await KillMercuryFixtureSegmentAsync(segments[1], player);
+            await RunReattachDeathHitsDifferentialAsync(combat, player, [segments[1]], "WaitingSibling");
             await CreatureCmd.SetCurrentHp(segments[2], 1);
             AssertMercuryNativeReviving(segments[0], "DEAD_MOVE");
             AssertMercuryNativeReviving(segments[1], "DEAD_MOVE");
@@ -171,6 +170,57 @@ internal sealed partial class UnattendedTestRunner
         await CreatureCmd.Damage(new BlockingPlayerChoiceContext(), segment, segment.CurrentHp,
             ValueProp.Unblockable | ValueProp.Unpowered, player.Creature);
         await RunManager.Instance.ActionExecutor.FinishedExecutingActions();
+    }
+
+    private async Task RunReattachDeathHitsDifferentialAsync(
+        CombatState combat, Player player, IReadOnlyList<Creature> targets, string phase)
+    {
+        CombatPredictionSimulator parent = CombatRootSnapshot.Capture(combat).ForkSimulator();
+        CombatPredictionSimulator[] lanes = [parent, parent.Fork()];
+        List<MoveStateSnapshot> predictions = [];
+        foreach (CombatPredictionSimulator simulator in lanes)
+        {
+            using IDisposable isolation = SimulationNotificationIsolation.Enter();
+            SimulatedCombatState state = (SimulatedCombatState)simulator.State.CombatState;
+            foreach (Creature target in targets)
+            {
+                simulator.Damage(target, simulator.State.GetCreature(target).CurrentHp,
+                    ValueProp.Unblockable | ValueProp.Unpowered, player.Creature);
+                if (state.GetPredictedMoveId(target) != "DEAD_MOVE")
+                    throw new InvalidOperationException("Reattach must switch a non-final segment before the next damage command.");
+            }
+            if (!CorePowerSupport.ApplyEnemyDeathPowers(simulator, state, state.KnownEnemies, new HashSet<uint>()))
+                throw new InvalidOperationException("Reattach death fixture unexpectedly requested a choice.");
+            predictions.Add(CaptureSimulated(simulator, state, player, targets[0]));
+        }
+        if (targets.Count == 2)
+        {
+            using IDisposable isolation = SimulationNotificationIsolation.Enter();
+            CombatPredictionSimulator finalDeath = parent.Fork();
+            SimulatedCombatState finalState = (SimulatedCombatState)finalDeath.State.CombatState;
+            Creature last = combat.Enemies.Single(enemy => !targets.Contains(enemy));
+            string previousMove = finalState.GetPredictedMoveId(last);
+            finalDeath.Damage(last, finalDeath.State.GetCreature(last).CurrentHp,
+                ValueProp.Unblockable | ValueProp.Unpowered, player.Creature);
+            if (finalState.GetPredictedMoveId(last) != previousMove
+                || targets.Any(target => finalState.GetPredictedMoveId(target) != "DEAD_MOVE"))
+                throw new InvalidOperationException("Reattach final death must preserve each segment's existing move.");
+            // The waiting siblings still have Reviving phases until cleanup.
+            // DoReattach consults their HP, not their permission to take a move.
+            finalState.ResolveReviveMove(finalDeath, targets[0], "REATTACH_MOVE");
+            if (finalDeath.State.GetCreature(targets[0]).IsAlive)
+                throw new InvalidOperationException("Reattach healed with every other segment at zero HP.");
+            if (!CorePowerSupport.ApplyEnemyDeathPowers(finalDeath, finalState, finalState.KnownEnemies, new HashSet<uint>())
+                || finalState.GetPredictedMoveId(last) != previousMove)
+                throw new InvalidOperationException("Deferred Reattach cleanup changed the final segment's move.");
+            _completedChecks.Add("MercuryReattach:FinalDeathPreservesMoves:WaitingReviversAreHpDead:Fork");
+        }
+        foreach (Creature target in targets)
+            await KillMercuryFixtureSegmentAsync(target, player);
+        MoveStateSnapshot actual = CaptureActual(combat, player, targets[0]);
+        for (int index = 0; index < predictions.Count; index++)
+            AssertSnapshotEqual(predictions[index], actual, "MercuryReattach", phase + ":death:" + index);
+        _completedChecks.Add($"MercuryReattach:{phase}:DeathBeforeNextHit:DirectFork:StrictState");
     }
 
     private static void AssertMercuryNativeReviving(Creature segment, string move)

@@ -631,6 +631,7 @@ internal sealed partial class CombatBeamSolver
         bool requested = combat.ConsumePlayerTurnEndRequest();
         if (!requested || !simulator.IsInProgress)
             return SearchBoundaryReason.None;
+        combat.RecordStartedPlayerTurnEndRequest();
         SearchBoundaryReason boundary = AdvanceRound(
             simulator, combat, turn - _startTurnNumber, processedEnemyDeaths,
             ref shufflesCrossed, action.TurnStartChoices);

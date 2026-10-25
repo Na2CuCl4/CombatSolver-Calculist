@@ -117,6 +117,18 @@ internal sealed partial class SimulatedCombatState
         ForceMonsterMove(creature, revive);
     }
 
+    // AfterDeath runs inside each Kill, before the next hit of a multi-hit card.
+    // The deferred death cleanup must not decide this move from the final roster.
+    public void ApplyReattachDeathMove(CombatPredictionSimulator simulator, Creature creature)
+    {
+        bool allOthersDead = GetTeammatesOf(creature)
+            .Where(candidate => candidate != creature && GetAmount<ReattachPower>(candidate) > 0)
+            .All(candidate => simulator.State.GetCreature(candidate).IsDead);
+        if ((!allOthersDead || simulator.State.GetCreature(creature).IsAlive)
+            && creature.Monster is DecimillipedeSegment)
+            ForceMonsterMove(creature, "DEAD_MOVE");
+    }
+
     public void BeginReattach(CombatPredictionSimulator simulator, Creature creature)
     {
         Creature[] otherSegments = GetTeammatesOf(creature)
@@ -130,7 +142,6 @@ internal sealed partial class SimulatedCombatState
             return;
         }
         SetDeathPhase(creature, PredictedDeathPhase.Reviving);
-        ForceMonsterMove(creature, "DEAD_MOVE");
     }
 
     public void CompleteDeathPhase(Creature creature)
@@ -176,7 +187,7 @@ internal sealed partial class SimulatedCombatState
             {
                 bool allOthersDead = GetTeammatesOf(creature)
                     .Where(candidate => candidate != creature && GetAmount<ReattachPower>(candidate) > 0)
-                    .All(candidate => !CanPerformMonsterMove(simulator, candidate));
+                    .All(candidate => simulator.State.GetCreature(candidate).IsDead);
                 if (!allOthersDead)
                 {
                     simulator.Heal(creature, GetAmount<ReattachPower>(creature));

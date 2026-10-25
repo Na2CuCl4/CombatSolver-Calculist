@@ -47,6 +47,9 @@ internal static partial class HookMirrors
         }
         BeforeCardPlayedMirrors.CompleteOrAbort(simulator, play);
         AfterCardPlayedMirrors.CompleteOrAbort(simulator, play, completed: true);
+        // Suspended frames retain this tail; dispatch only after both passes finish,
+        // at the same completed CardPlay boundary as the ordinary facade.
+        CustomCombatStateMirrors.AfterCardResolved?.Invoke(simulator, play);
         return true;
     }
 

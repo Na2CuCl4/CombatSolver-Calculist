@@ -2,6 +2,12 @@
 
 按改动选择最小验证层，方法见 [无人测试](HEADLESS_TESTING.md) 与 [社区验收](community/testing-guide.md)。以下命令提供当前复跑入口，不表示本轮已执行。
 
+强制结束动作使用既有 `forced-turn-terminal-v0111` / `potion-forced-turn-terminal-v0111`，同时检查卡牌／药水子节点、没有下一玩家回合的终局、直接末击丢弃结束请求及Fork边记录。出牌续体使用 `MIRRORED-HOOK-FILTER` / `CARD-EXECUTION-CONTINUATION`；普通、捕获、挂起与恢复按每个CardPlay核对完成回调次数。分段死亡使用 `mercury-reattach-boundary-v0111`，包括逐次多击死亡、最后一段行动保留及HP0等待者的重接资格。
+
+隔离Native的 `--native-boundary-contracts` 复用AfterPlayCaptureMask断言，核对适配器回调与live不变；`run_adapter_gate.py --case hooks-double-proof-auto-capture --case hooks-poincare-end-replay-capture` 实际启用执行捕获，比较完整原生／预测状态，并修改子分支、父分支与live后分别验证根冻结和兄弟隔离。原蜈蚣10回合录制的40个状态边界、停笔原输入同预算新搜索、分支身份原输入新搜索分开记账；旧计划的错误结束标记保持原样，不自动改写后声称精确重放通过。
+
+第三方选择的出牌前分类回归使用同一 `run_adapter_gate.py` 的 `b-Syllogism-choice-last`、`b-RenewFoundations-choice-last`、`b-LiteratureSearch-choice-last`、`b-BreathingRoom-choice-last`、`b-Permutation-choice-last`、`b-FromThisToThat-choice-last`、`b-AssociativeLaw-choice-last` 和条件无页面代表。现有 CardsB 固定计划夹具在出牌前检查潜在效果元数据，并核对依赖历史／生成选项的执行规格仍明确拒绝，之后按原完整计划进行 native/predicted 差分。原失败战斗 input 的独立新搜索保持原预算和严格 continuation；其结果不替换原错误，也不算新自然路线。
+
 卡牌条件无选择与隐式全选的最小原生回归由 Designer 的 `run_adapter_gate.py` 执行：`b-syllogism-unqualified`、`b-syllogism-one-previous-skill`、`b-syllogism-qualified-no-attacks`、`b-syllogism-qualified-one-attack`、`matrix-b-Syllogism-u0`、`native-implicit-hologram-single` 和 `native-implicit-prepared-short`。夹具交给 Native 的是完整固定计划，不过滤隐式条目；比较完整有序状态、九条 RNG 与 continuation，后两个原版代表覆盖单候选与候选不足所需数量。旧错误录制计划的消费拒绝以及原自然战斗输入的新 1000 ms 生产搜索另记为负例与真实战斗回归，不能计作新的自然路线。
 
 2026-10-05 本次结果：Designer `artifacts/simulation/native-choice-20261005-fixed-gate/verification.json` 的上述七例及 Seeker/Sly 两条嵌套代表共 9 例通过。`native-choice-20261005-battle-search/verification.json` 保持原失败战斗 input 字节、1000 ms 预算与所有比较字段，五回合胜利、19 次严格对账全等；新搜索没有选择三段论，三段论具体分支由上述配对夹具证明。`native-choice-20261005-recorded-negative/consumption-audit.json` 确认原四回合录制动作未改写，第四回合三段论多出的空选择被 `TurnStartChoiceCursor.AssertConsumed` 拒绝，拒绝前 15 次比较全等。失败的零/单攻击夹具分别保留于 `native-choice-20261005-before-zero` / `native-choice-20261005-before-one`，旧自然路线错误保留于 `p0-20261005-final-a0`。这只是最小修复回归，完整原 seed 路线仍由后继新冻结批次验收。

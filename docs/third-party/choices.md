@@ -64,6 +64,8 @@ CardChoiceMirrors.Register<TYourCard>(spec, apply);
 - `spec(simulator, playedCard, card)` 返回一个 `CardChoiceSpec?`。本次条件分支不请求选择时返回 `null`；下界为零的 spec 仍表示存在允许空选的页面，不能代替无选择分支。
 - `apply(simulator, combat, playedCard, card, choice)` 施加效果，返回是否已经结算完。
 
+可选第三参数 `potentialEffect` 提供出牌前可查询的潜在效果，例如 `potentialEffect: PlanChoiceEffect.ModDefined`。不提供时为未知；查询不会为了分类调用 `spec`。`spec` 属于执行期合同，可以依赖当前出牌历史、已生成选项和条件资格，搜索在 root、手牌或抽牌堆预查时只读取登记元数据。潜在效果不保证本次分支真的请求选择；条件分支和实际候选仍由执行期 `spec` 严格决定。登记类型在自动出牌的嵌套选择检查中保守视为可能需要选择。
+
 原生固定数量选择在候选不足或恰好全部时直接返回全部候选。对应 spec 设置 `IsImplicitAllSelection`，并保持原生候选顺序；模拟器立即通过同一个 `apply` 执行，不挂起页面、不消费显式计划。真正的选择仍进入计划游标，旧计划中多出的选择仍由消费断言拒绝。登记方不能用此标记消除一个原生确实存在的选择页面。
 
 比药水那条多两件要注意的事：

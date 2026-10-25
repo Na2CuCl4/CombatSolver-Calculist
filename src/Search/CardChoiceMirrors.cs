@@ -25,7 +25,8 @@ internal static class CardChoiceMirrors
 {
     private readonly record struct Entry(
         Func<CombatPredictionSimulator, PredictedCard, CardChoiceSpec?> Spec,
-        Func<CombatPredictionSimulator, SimulatedCombatState, PredictedCard, PlanCardChoice, bool> Apply);
+        Func<CombatPredictionSimulator, SimulatedCombatState, PredictedCard, PlanCardChoice, bool> Apply,
+        PlanChoiceEffect? PotentialEffect);
 
     private static readonly Dictionary<Type, Entry> Registry = [];
 
@@ -43,9 +44,13 @@ internal static class CardChoiceMirrors
     /// 和原版同一口径）。选项牌不在任何模拟牌堆里，所以传进来的是计划里的令牌本身，
     /// 由登记方按 CardId 自己认；求解器不会替你把令牌解析成牌。
     /// </param>
+    /// <param name="potentialEffect">
+    /// 出牌前分类使用的潜在效果。省略表示未知；分类不会调用执行期 spec。
+    /// </param>
     public static void Register<TCard>(
         Func<CombatPredictionSimulator, PredictedCard, TCard, CardChoiceSpec?> spec,
-        Func<CombatPredictionSimulator, SimulatedCombatState, PredictedCard, TCard, PlanCardChoice, bool> apply)
+        Func<CombatPredictionSimulator, SimulatedCombatState, PredictedCard, TCard, PlanCardChoice, bool> apply,
+        PlanChoiceEffect? potentialEffect = null)
         where TCard : CardModel
     {
         ArgumentNullException.ThrowIfNull(spec);
@@ -56,7 +61,23 @@ internal static class CardChoiceMirrors
             new Entry(
                 (simulator, playedCard) => spec(simulator, playedCard, (TCard)playedCard.Preview),
                 (simulator, combat, playedCard, choice) =>
-                    apply(simulator, combat, playedCard, (TCard)playedCard.Preview, choice)));
+                    apply(simulator, combat, playedCard, (TCard)playedCard.Preview, choice),
+                potentialEffect));
+    }
+
+    // Presence and potential effect are safe before play. Spec may require history
+    // or generated options captured during the actual OnPlay execution.
+    public static bool IsRegistered(CardModel card) => Registry.ContainsKey(card.GetType());
+
+    public static bool TryGetPotentialEffect(CardModel card, out PlanChoiceEffect? effect)
+    {
+        if (Registry.TryGetValue(card.GetType(), out Entry entry))
+        {
+            effect = entry.PotentialEffect;
+            return true;
+        }
+        effect = null;
+        return false;
     }
 
     public static bool TryGetSpec(

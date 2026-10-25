@@ -72,6 +72,11 @@ internal static partial class CardChoiceSupport
         };
     }
 
+    public static PlanChoiceEffect? GetPotentialEffect(CombatPredictionSimulator simulator, PredictedCard card)
+        => CardChoiceMirrors.TryGetPotentialEffect(card.Preview, out PlanChoiceEffect? effect)
+            ? effect
+            : GetSpec(simulator, card)?.Effect;
+
     public static CardChoiceSpec? GetSpec(CombatPredictionSimulator simulator, PredictedCard playedCard)
     {
         // 第三方登记优先。登记表为空时这里只是一次计数比较，原版一条也走不进来。
@@ -208,7 +213,8 @@ internal static partial class CardChoiceSupport
             .FirstOrDefault()
             ?? throw new InvalidOperationException(
                 $"嵌套选牌检查找不到 {token.CardId}+{token.UpgradeLevel}#{token.OptionOccurrence}。");
-        return GetSpec(simulator, selected) != null
+        return CardChoiceMirrors.IsRegistered(selected.Preview)
+            || GetSpec(simulator, selected) != null
             || BuildRequiredEmptyChoice(selected.Preview) != null
             || selected.Preview is Abundance or Discovery or Quasar or Splash;
     }

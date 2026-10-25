@@ -332,6 +332,13 @@ internal sealed partial class SimulatedCombatState
 
     public bool PlayerTurnEndRequested => _playerTurnEndRequested;
 
+    // Replay-edge evidence only: a forced end can finish combat before another
+    // player turn starts. It changes neither future gameplay nor state equivalence.
+    internal int StartedPlayerTurnEndRequests { get; private set; }
+
+    internal void RecordStartedPlayerTurnEndRequest()
+        => StartedPlayerTurnEndRequests = checked(StartedPlayerTurnEndRequests + 1);
+
     public void RequestPlayerTurnEnd()
         => _playerTurnEndRequested = true;
 

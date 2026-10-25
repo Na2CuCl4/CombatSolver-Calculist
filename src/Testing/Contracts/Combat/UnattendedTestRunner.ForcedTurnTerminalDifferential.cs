@@ -8,6 +8,8 @@ using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Models.Cards;
 using MegaCrit.Sts2.Core.Models.Monsters;
+using MegaCrit.Sts2.Core.Models.Powers;
+using CombatSolver.Engine.InCombat.Mirrors.Hooks.Card;
 using MegaCrit.Sts2.Core.Runs;
 using CombatSolver.Engine.InCombat.Simulation;
 
@@ -78,6 +80,7 @@ internal sealed partial class UnattendedTestRunner
                     initial, "ForcedTurnTerminal", "InitialRoot");
                 if (before.TerminalStamp.HasValue || before.AllEnemiesDead)
                     throw new InvalidOperationException("强制结束夹具在出牌前已经终局。");
+                AssertForcedTurnActionBoundaries(driver, before, player, enemy, action);
                 direct = InvokeForcedTerminalReplay(driver, [action], null, 0, triggers);
                 incremental = InvokeForcedTerminalReplay(driver, [action], before, actionTurn, null);
                 _ = InvokeForcedTerminalMethod(driver, "AssertIncrementalEquivalent",
@@ -196,6 +199,71 @@ internal sealed partial class UnattendedTestRunner
         ActionRelicTriggerRecorder? triggers)
         => (SimulationSnapshot)InvokeForcedTerminalMethod(driver, "Replay",
             [actions, parent, turn, 0, triggers, null, null, null, null, null, null, null, true, true, null])!;
+
+    private void AssertForcedTurnActionBoundaries(CombatBeamSolver driver, SimulationSnapshot original,
+        Player player, Creature enemy, PlanAction action)
+    {
+        foreach (bool directLethal in new[] { false, true })
+        {
+            CombatPredictionSimulator simulator = original.Simulator.Fork();
+            var combat = (SimulatedCombatState)simulator.State.CombatState;
+            // Previous edges survive Fork, but must not make a later ordinary
+            // lethal card look like it ended the turn.
+            combat.RecordStartedPlayerTurnEndRequest();
+            combat.RecordStartedPlayerTurnEndRequest();
+            SimulationSnapshot edgeOnly = (SimulationSnapshot)InvokeForcedTerminalMethod(driver, "Snapshot",
+                [simulator.Fork(), action.Turn, 0, original.ShufflesCrossed,
+                    SearchBoundaryReason.None, original.ProcessedEnemyDeaths])!;
+            try
+            {
+                if (edgeOnly.StateKey != original.StateKey)
+                    throw new InvalidOperationException("回放边记录改变了相同玩法状态的搜索等价键。");
+            }
+            finally { edgeOnly.ReleaseSimulator(); }
+            if (directLethal)
+            {
+                var panache = combat.AddPowerInstance<PanachePower>(player.Creature, 10);
+                var prediction = simulator.StateStore.Get(panache, () => new PanachePredictionState(panache));
+                prediction.AlreadyApplied = true;
+                prediction.CardsLeft = 1;
+            }
+            else
+            {
+                // Enemy-side poison kills before any new player turn starts.
+                combat.SetAmount<PoisonPower>(enemy, 1);
+            }
+            SimulationSnapshot parentSnapshot = (SimulationSnapshot)InvokeForcedTerminalMethod(driver, "Snapshot",
+                [simulator, action.Turn, 0, original.ShufflesCrossed,
+                    SearchBoundaryReason.None, original.ProcessedEnemyDeaths])!;
+            SimulationSnapshot? result = null;
+            try
+            {
+                result = InvokeForcedTerminalReplay(driver, [action], parentSnapshot, action.Turn, null);
+                var resultCombat = (SimulatedCombatState)result.Simulator.State.CombatState;
+                SearchNode parent = ForcedTerminalAnnotationNode(parentSnapshot, null, null);
+                SearchNode child = (SearchNode)InvokeForcedTerminalMethod(driver,
+                    action.Kind == PlanActionKind.UsePotion ? "CreatePlannedPotionChild" : "CreatePlannedCardChild",
+                    [parent, action, result])!;
+                int expectedRequests = directLethal ? 2 : 3;
+                if (!result.AllEnemiesDead || result.PlayerDead || result.Turn != action.Turn
+                    || result.TerminalStamp != new CombatTerminalStamp(action.Turn, CombatTerminalOutcome.Victory)
+                    || resultCombat.PlayerTurnEndRequested
+                    || resultCombat.StartedPlayerTurnEndRequests != expectedRequests
+                    || child.Action?.EndsPlayerTurn != !directLethal || child.Turn != result.Turn)
+                    throw new InvalidOperationException($"强制结束边界错误：directLethal={directLethal}, requests={resultCombat.StartedPlayerTurnEndRequests}, node={child.Turn}, snapshot={result.Turn}, terminal={result.TerminalStamp}, ends={child.Action?.EndsPlayerTurn}。");
+                var fork = (SimulatedCombatState)result.Simulator.Fork().State.CombatState;
+                if (fork.StartedPlayerTurnEndRequests != expectedRequests
+                    || combat.StartedPlayerTurnEndRequests != 2)
+                    throw new InvalidOperationException("强制结束边记录未按值Fork或污染父分支。");
+                _completedChecks.Add($"ForcedTurnTerminal:ActionAnnotation:{action.Kind}:{(directLethal ? "DirectLethalDiscardsRequest" : "EnemyStartTerminalWithoutNewPlayerTurn")}:ForkAndParentIsolation");
+            }
+            finally
+            {
+                result?.ReleaseSimulator();
+                parentSnapshot.ReleaseSimulator();
+            }
+        }
+    }
 
     private static object? InvokeForcedTerminalMethod(CombatBeamSolver driver, string name, object?[] arguments)
     {

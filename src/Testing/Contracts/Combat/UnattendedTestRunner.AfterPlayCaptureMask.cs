@@ -1,4 +1,5 @@
 using CombatSolver.Engine.Common;
+using System.Collections.Concurrent;
 using CombatSolver.Engine.InCombat.Mirrors;
 using CombatSolver.Engine.InCombat.Simulation;
 using MegaCrit.Sts2.Core.Combat;
@@ -14,6 +15,7 @@ internal sealed partial class UnattendedTestRunner
 {
     private static void AssertAfterPlayCaptureMatchesFacade(CombatState live, Player player)
     {
+        using CardResolvedCallbackObservation callbacks = new();
         string liveBefore = ContinuationStamp.CaptureLive(live).StateText;
         CombatRootSnapshot root = CombatRootSnapshot.Capture(live);
         foreach (bool ending in new[] { false, true })
@@ -55,6 +57,7 @@ internal sealed partial class UnattendedTestRunner
                     throw new InvalidOperationException("After-play fixture could not begin capture.");
                 try { HookMirrors.AfterCardPlayed(sim, card, play); }
                 finally { if (capture) sim.EndExecutionContinuationCapture(); }
+                callbacks.AssertExact(sim, [play]);
                 if (sim.HasPendingChoice || sim.TakeExecutionContinuation() is not null)
                     throw new InvalidOperationException("After-play no-choice fixture unexpectedly suspended.");
                 // The late hook still runs after lethal, but its move command has its
@@ -74,5 +77,37 @@ internal sealed partial class UnattendedTestRunner
         }
         if (ContinuationStamp.CaptureLive(live).StateText != liveBefore)
             throw new InvalidOperationException("After-play capture fixture changed live combat.");
+    }
+
+    // The adapter completion boundary is observable independently of vanilla
+    // history. Keep per-simulator/play identity so sibling resumes cannot hide
+    // missing or duplicate callbacks in aggregate counts.
+    private sealed class CardResolvedCallbackObservation : IDisposable
+    {
+        private readonly Action<CombatPredictionSimulator, CardPlay>? _previous =
+            CustomCombatStateMirrors.AfterCardResolved;
+        private readonly ConcurrentDictionary<CombatPredictionSimulator, ConcurrentDictionary<CardPlay, int>> _calls =
+            new(ReferenceEqualityComparer.Instance);
+
+        public CardResolvedCallbackObservation()
+            => CustomCombatStateMirrors.AfterCardResolved = Observe;
+
+        private void Observe(CombatPredictionSimulator simulator, CardPlay play)
+        {
+            _previous?.Invoke(simulator, play);
+            _calls.GetOrAdd(simulator, static _ => new(ReferenceEqualityComparer.Instance))
+                .AddOrUpdate(play, 1, static (_, count) => count + 1);
+        }
+
+        public void AssertExact(CombatPredictionSimulator simulator, IEnumerable<CardPlay> expected)
+        {
+            HashSet<CardPlay> plays = new(expected, ReferenceEqualityComparer.Instance);
+            _calls.TryGetValue(simulator, out var actual);
+            if ((actual?.Count ?? 0) != plays.Count
+                || plays.Any(play => actual == null || !actual.TryGetValue(play, out int count) || count != 1))
+                throw new InvalidOperationException("AfterCardResolved must run once for each newly completed CardPlay, and never for a suspended play.");
+        }
+
+        public void Dispose() => CustomCombatStateMirrors.AfterCardResolved = _previous;
     }
 }
